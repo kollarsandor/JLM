@@ -1924,12 +1924,11 @@ fn writeSnapshotVersion4ToPath(snapshot: *const SavedModelSnapshot, path: []cons
     tmp_exists = false;
 }
 
-================
 
 test "RSF forward then inverse returns input within 1e-4 tolerance" {
     const allocator = std.testing.allocator;
     var prng = std.Random.DefaultPrng.init(42);
-    const random = prng.random();
+    _ = prng.random();
 
     var rsf = try RSFLayer.init(allocator, 32);
     defer rsf.deinit();
@@ -1972,7 +1971,7 @@ test "RSF with OFTB forward then inverse returns input within 1e-4 tolerance" {
     }
     var li: usize = 0;
     while (li < num_layers) : (li += 1) {
-        var layer = try RSFLayer.init(allocator, dim);
+        const layer = try RSFLayer.init(allocator, dim);
         try layers.append(layer);
     }
 

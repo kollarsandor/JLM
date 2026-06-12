@@ -267,10 +267,10 @@ pub const ReasoningOrchestrator = struct {
             const perturbation_b = (self.esso.prng.random().float(f64) - 0.5) * 0.1;
             node.phase += (perturbation_a + perturbation_b) * 0.5;
             const perturb_scale = 0.01;
-            var new_a_re = node.qubit.a.re + perturbation_a * perturb_scale;
-            var new_a_im = node.qubit.a.im + perturbation_a * perturb_scale;
-            var new_b_re = node.qubit.b.re + perturbation_b * perturb_scale;
-            var new_b_im = node.qubit.b.im + perturbation_b * perturb_scale;
+            const new_a_re = node.qubit.a.re + perturbation_a * perturb_scale;
+            const new_a_im = node.qubit.a.im + perturbation_a * perturb_scale;
+            const new_b_re = node.qubit.b.re + perturbation_b * perturb_scale;
+            const new_b_im = node.qubit.b.im + perturbation_b * perturb_scale;
             const mag = std.math.sqrt(new_a_re * new_a_re + new_a_im * new_a_im + new_b_re * new_b_re + new_b_im * new_b_im);
             if (mag > 1e-12) {
                 node.qubit.a.re = new_a_re / mag;
@@ -359,23 +359,27 @@ pub const ReasoningOrchestrator = struct {
                 if (count >= self.transform_node_limit) break;
                 const node = entry.value_ptr;
                 const quantum_state_a = quantum.QuantumState{
-                    .amplitude_real = node.qubit.a.re,
-                    .amplitude_imag = node.qubit.a.im,
+                    .amplitudes = .{
+                        Complex(f64).init(node.qubit.a.re, node.qubit.a.im),
+                        Complex(f64).init(0.0, 0.0),
+                    },
                     .phase = node.phase,
                     .entanglement_degree = 0.0,
                 };
                 const transformed_a = transform.applyToQuantumState(&quantum_state_a);
                 const quantum_state_b = quantum.QuantumState{
-                    .amplitude_real = node.qubit.b.re,
-                    .amplitude_imag = node.qubit.b.im,
+                    .amplitudes = .{
+                        Complex(f64).init(node.qubit.b.re, node.qubit.b.im),
+                        Complex(f64).init(0.0, 0.0),
+                    },
                     .phase = node.phase,
                     .entanglement_degree = 0.0,
                 };
                 const transformed_b = transform.applyToQuantumState(&quantum_state_b);
-                var new_a_re = if (@abs(transformed_a.amplitude_real) < epsilon) epsilon else transformed_a.amplitude_real;
-                var new_a_im = if (@abs(transformed_a.amplitude_imag) < epsilon) epsilon else transformed_a.amplitude_imag;
-                var new_b_re = if (@abs(transformed_b.amplitude_real) < epsilon) epsilon else transformed_b.amplitude_real;
-                var new_b_im = if (@abs(transformed_b.amplitude_imag) < epsilon) epsilon else transformed_b.amplitude_imag;
+                const new_a_re = if (@abs(transformed_a.amplitudes[0].re) < epsilon) epsilon else transformed_a.amplitudes[0].re;
+                const new_a_im = if (@abs(transformed_a.amplitudes[0].im) < epsilon) epsilon else transformed_a.amplitudes[0].im;
+                const new_b_re = if (@abs(transformed_b.amplitudes[0].re) < epsilon) epsilon else transformed_b.amplitudes[0].re;
+                const new_b_im = if (@abs(transformed_b.amplitudes[0].im) < epsilon) epsilon else transformed_b.amplitudes[0].im;
                 const mag = std.math.sqrt(new_a_re * new_a_re + new_a_im * new_a_im + new_b_re * new_b_re + new_b_im * new_b_im);
                 if (mag > 1e-12) {
                     node.qubit.a.re = new_a_re / mag;
@@ -544,7 +548,7 @@ pub const ReasoningOrchestrator = struct {
         };
     }
 
-    pub fn modulateTensor(self: *const Self, data: []f32, modulation: f64) void {
+    pub fn modulateTensor(_: *const Self, data: []f32, modulation: f64) void {
         if (data.len == 0) return;
         const scale: f32 = @floatCast(modulation);
         var i: usize = 0;

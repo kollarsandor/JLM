@@ -1776,11 +1776,11 @@ pub const IBMQuantumClient = struct {
         var i: usize = 0;
         while (i < n) : (i += 1) {
             if ((i & cmask) == cmask and (i & tbit) == 0) {
-                const i0 = i;
-                const i1 = i | tbit;
-                const temp = state[i0];
-                state[i0] = state[i1];
-                state[i1] = temp;
+                const idx0 = i;
+                const idx1 = i | tbit;
+                const temp = state[idx0];
+                state[idx0] = state[idx1];
+                state[idx1] = temp;
             }
         }
     }
@@ -1865,11 +1865,11 @@ pub const IBMQuantumClient = struct {
                 var i: usize = 0;
                 while (i < n) : (i += 1) {
                     if ((i & bit0) == 0 and (i & bit1) == 0) {
-                        const i01 = i | bit0;
-                        const i10 = i | bit1;
-                        const temp = state[i01];
-                        state[i01] = state[i10];
-                        state[i10] = temp;
+                        const idx01 = i | bit0;
+                        const idx10 = i | bit1;
+                        const temp = state[idx01];
+                        state[idx01] = state[idx10];
+                        state[idx10] = temp;
                     }
                 }
             },
@@ -2125,10 +2125,10 @@ pub const IBMQuantumClient = struct {
                 } else if (num_qubits == 3) {
                     try circuit.ccx(0, 1, 2);
                 } else {
-                    var controls = try self.allocator.alloc(u32, num_qubits - 1);
-                    defer self.allocator.free(controls);
-                    for (controls, 0..) |*c, i| c.* = @intCast(i);
-                    try circuit.mcx(controls, num_qubits - 1);
+                    const controls1 = try self.allocator.alloc(u32, num_qubits - 1);
+                    defer self.allocator.free(controls1);
+                    for (controls1, 0..) |*c, i| c.* = @intCast(i);
+                    try circuit.mcx(controls1, num_qubits - 1);
                 }
                 try circuit.h(@intCast(num_qubits - 1));
             } else {
@@ -2157,10 +2157,10 @@ pub const IBMQuantumClient = struct {
                 } else if (num_qubits == 3) {
                     try circuit.ccx(0, 1, 2);
                 } else {
-                    var controls = try self.allocator.alloc(u32, num_qubits - 1);
-                    defer self.allocator.free(controls);
-                    for (controls, 0..) |*c, i| c.* = @intCast(i);
-                    try circuit.mcx(controls, num_qubits - 1);
+                    const controls2 = try self.allocator.alloc(u32, num_qubits - 1);
+                    defer self.allocator.free(controls2);
+                    for (controls2, 0..) |*c, i| c.* = @intCast(i);
+                    try circuit.mcx(controls2, num_qubits - 1);
                 }
                 try circuit.h(@intCast(num_qubits - 1));
             } else {
@@ -2746,4 +2746,3 @@ test "quantum client statistics" {
     try std.testing.expectEqual(@as(u32, 0), stats.active_jobs);
 }
 
-================

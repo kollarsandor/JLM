@@ -553,7 +553,7 @@ pub const MGT = struct {
                 const left_id = current.items[i];
                 const right_id = current.items[i + 1];
                 var cache_key_buf: [64]u8 = undefined;
-                const cache_key = try std.fmt.bufPrint(&cache_key_buf, "{}_{}", .{ left_id, right_id });
+                const cache_key = try std.fmt.bufPrint(&cache_key_buf, "{d}_{d}", .{ left_id, right_id });
                 if (pair_cache.get(cache_key)) |merge| {
                     if (merge.priority < best_priority) {
                         best_priority = merge.priority;
@@ -567,7 +567,7 @@ pub const MGT = struct {
                     const right = self.id_to_token.get(right_id) orelse return error.InvalidData;
                     const pair = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ left, right });
                     if (self.bpe_pairs.get(pair)) |merge| {
-                        const owned_key = try std.fmt.allocPrint(self.allocator, "{}_{}", .{ left_id, right_id });
+                        const owned_key = try std.fmt.allocPrint(self.allocator, "{d}_{d}", .{ left_id, right_id });
                         try pair_cache.put(owned_key, merge);
                         if (merge.priority < best_priority) {
                             best_priority = merge.priority;
@@ -577,7 +577,7 @@ pub const MGT = struct {
                             found = true;
                         }
                     } else {
-                        const owned_key = try std.fmt.allocPrint(self.allocator, "{}_{}", .{ left_id, right_id });
+                        const owned_key = try std.fmt.allocPrint(self.allocator, "{d}_{d}", .{ left_id, right_id });
                         try pair_cache.put(owned_key, BPEMerge{ .token_id = 0, .priority = std.math.maxInt(u32) });
                     }
                     self.allocator.free(pair);

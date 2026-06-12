@@ -75,7 +75,6 @@ pub const NodeVersion = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.data.deinit();
         var iter = self.properties.iterator();
         while (iter.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
@@ -1914,4 +1913,3 @@ test "timestamp utilities" {
     try std.testing.expect(seconds == 1.5);
 }
 
-================

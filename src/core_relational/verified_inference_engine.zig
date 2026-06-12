@@ -299,9 +299,9 @@ pub const VerifiedInferenceEngine = struct {
             obf.ProofOfCorrectness.OperationType.AffineCoupling,
         );
 
-        i = 0;
-        while (i < output_buf.len) : (i += 1) {
-            output_buf[i] = intermediate_1[i];
+        var copy_i: usize = 0;
+        while (copy_i < output_buf.len) : (copy_i += 1) {
+            output_buf[copy_i] = intermediate_1[copy_i];
         }
 
         try self.proof_of_correctness.recordStep(
@@ -822,4 +822,3 @@ pub const ProofAggregator = struct {
     }
 };
 
-================

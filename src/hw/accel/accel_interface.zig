@@ -702,11 +702,12 @@ pub const RSFAccelerator = struct {
         const clip_max_bits: u16 = @bitCast(self.clip_max);
 
         const n_layers = self.layers.len;
+        const step_alloc = std.heap.page_allocator;
         // activations[0] = inputs (caller-owned), activations[1..n_layers] = layer outputs (we own).
-        var activations = allocator.alloc(?*futhark.struct_futhark_f16_3d, n_layers + 1) catch return AccelError.AllocationFailed;
-        defer allocator.free(activations);
-        var owned = allocator.alloc(bool, n_layers + 1) catch return AccelError.AllocationFailed;
-        defer allocator.free(owned);
+        var activations = step_alloc.alloc(?*futhark.struct_futhark_f16_3d, n_layers + 1) catch return AccelError.AllocationFailed;
+        defer step_alloc.free(activations);
+        var owned = step_alloc.alloc(bool, n_layers + 1) catch return AccelError.AllocationFailed;
+        defer step_alloc.free(owned);
         for (activations) |*a| a.* = null;
         for (owned) |*o| o.* = false;
         activations[0] = inputs.arr;
@@ -1372,11 +1373,10 @@ pub const EmbeddingAccelerator = struct {
         self.weight.arr = new_weight;
         _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_weight);
 
-        var zeroed_grad = try FutharkArray2DF16.newZeros(self.ctx, self.vocab_size, self.dim, std.heap.page_allocator);
+        const zeroed_grad = try FutharkArray2DF16.newZeros(self.ctx, self.vocab_size, self.dim, std.heap.page_allocator);
         const old_g = self.grad_weight.arr;
         self.grad_weight.arr = zeroed_grad.arr;
         _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_g);
     }
 };
 
-================

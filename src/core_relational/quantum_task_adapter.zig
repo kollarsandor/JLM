@@ -33,7 +33,7 @@ pub const QuantumSubgraph = struct {
             .edge_keys = ArrayList(nsir.EdgeKey).init(allocator),
             .total_entanglement = 0.0,
             .avg_fractal_dimension = 0.0,
-            .subgraph_id = @as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())))),
+            .subgraph_id = @as(u64, @truncate(@as(u128, @bitCast(@as(i64, @truncate(std.time.nanoTimestamp())))))),
             .semantic_cluster_id = 0,
             .allocator = allocator,
         };
@@ -252,7 +252,7 @@ pub const QuantumTaskAdapter = struct {
     }
 
     pub fn executeQuantumTask(self: *Self, subgraph: *const QuantumSubgraph) !QuantumTaskResult {
-        const start_time = std.time.nanoTimestamp();
+        const start_time = @as(i64, @truncate(std.time.nanoTimestamp()));
         self.statistics.total_tasks_submitted += 1;
 
         var result = QuantumTaskResult.init(self.allocator, subgraph.subgraph_id);
@@ -271,7 +271,7 @@ pub const QuantumTaskAdapter = struct {
             try result.setBackendName("local_simulator");
         }
 
-        const end_time = std.time.nanoTimestamp();
+        const end_time = @as(i64, @truncate(std.time.nanoTimestamp()));
         const elapsed_ns = end_time - start_time;
         const max_i64: i128 = std.math.maxInt(i64);
         const min_i64: i128 = std.math.minInt(i64);

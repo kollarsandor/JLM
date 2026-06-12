@@ -366,4 +366,3 @@ pub extern "c" fn futhark_project_opaque_tup2_arr1d_f16_arr1d_f16_1(
     obj: ?*const struct_futhark_opaque_tup2_1d,
 ) c_int;
 
-================

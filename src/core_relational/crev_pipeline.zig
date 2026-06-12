@@ -237,7 +237,7 @@ pub const RelationalTriplet = struct {
         object: []const u8,
         confidence_in: f64,
     ) !RelationalTriplet {
-        const now = std.time.nanoTimestamp();
+        const now = @as(i64, @truncate(std.time.nanoTimestamp()));
 
         const s = try allocator.dupe(u8, subject);
         errdefer allocator.free(s);
@@ -463,7 +463,7 @@ pub const ValidationResult = struct {
             .validation_method = "",
             .conflicts = ArrayList(*RelationalTriplet).init(allocator),
             .anomaly_score = 0.0,
-            .validation_time = std.time.nanoTimestamp(),
+            .validation_time = @as(i64, @truncate(std.time.nanoTimestamp())),
             .allocator = allocator,
         };
     }
@@ -1052,7 +1052,7 @@ pub const CREVPipeline = struct {
             .integration_count = 0,
             .conflict_count = 0,
             .allocator = allocator,
-            .start_time = std.time.nanoTimestamp(),
+            .start_time = @as(i64, @truncate(std.time.nanoTimestamp())),
             .total_confidence_sum = 0.0,
             .relation_patterns = ArrayList(RelationPattern).init(allocator),
             .tokenizer_config = TokenizerConfig.default(),
@@ -1106,7 +1106,7 @@ pub const CREVPipeline = struct {
     }
 
     pub fn processTextStream(self: *CREVPipeline, text: []const u8) !PipelineResult {
-        const start_ns = std.time.nanoTimestamp();
+        const start_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         var result = PipelineResult.init();
 
         var triplets = try self.extractTriplets(text);
@@ -1148,14 +1148,14 @@ pub const CREVPipeline = struct {
             }
         }
 
-        const end_ns = std.time.nanoTimestamp();
+        const end_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         result.processing_time_ns = end_ns - start_ns;
         result.stage = .indexing;
         return result;
     }
 
     pub fn processStructuredDataStream(self: *CREVPipeline, data: []const u8) !PipelineResult {
-        const start_ns = std.time.nanoTimestamp();
+        const start_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         var result = PipelineResult.init();
 
         var triplets = try self.extractTripletsFromStructured(data);
@@ -1183,14 +1183,14 @@ pub const CREVPipeline = struct {
             }
         }
 
-        const end_ns = std.time.nanoTimestamp();
+        const end_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         result.processing_time_ns = end_ns - start_ns;
         result.stage = .indexing;
         return result;
     }
 
     pub fn processImageMetadataStream(self: *CREVPipeline, metadata: []const u8) !PipelineResult {
-        const start_ns = std.time.nanoTimestamp();
+        const start_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         var result = PipelineResult.init();
 
         var triplets = try self.extractTripletsFromImageMetadata(metadata);
@@ -1218,7 +1218,7 @@ pub const CREVPipeline = struct {
             }
         }
 
-        const end_ns = std.time.nanoTimestamp();
+        const end_ns = @as(i64, @truncate(std.time.nanoTimestamp()));
         result.processing_time_ns = end_ns - start_ns;
         result.stage = .indexing;
         return result;
@@ -1623,7 +1623,7 @@ pub const CREVPipeline = struct {
     }
 
     pub fn getPipelineStatistics(self: *CREVPipeline) PipelineStatistics {
-        const uptime_ns = std.time.nanoTimestamp() - self.start_time;
+        const uptime_ns = @as(i64, @truncate(std.time.nanoTimestamp())) - self.start_time;
         const uptime_ms_i64: i64 = @as(i64, @intCast(@max(@as(i128, 0), @divTrunc(uptime_ns, 1_000_000))));
         const uptime_sec = @as(f64, @floatFromInt(@max(@as(i128, 1), uptime_ns))) / 1_000_000_000.0;
 
@@ -1707,7 +1707,7 @@ pub const CREVPipeline = struct {
             }
         }
 
-        var results = try self.knowledge_index.queryMorphemeAware(subject, relation, object, self.allocator);
+        const results = try self.knowledge_index.queryMorphemeAware(subject, relation, object, self.allocator);
 
         for (self.inference_hooks.items) |hook| {
             if (hook.post_query) |cb| {

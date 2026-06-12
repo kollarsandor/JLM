@@ -1731,4 +1731,3 @@ test "RelationalGraphProcessingUnit managePower" {
     try testing.expectEqual(@as(usize, 4), stats.total_cores);
 }
 
-================

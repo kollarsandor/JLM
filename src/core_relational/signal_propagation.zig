@@ -30,14 +30,14 @@ pub const SignalState = struct {
             .amplitude = amp,
             .phase = ph,
             .frequency = freq,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @as(i64, @truncate(std.time.nanoTimestamp())),
         };
     }
 
     pub fn advance(self: *SignalState, delta_time: f64) void {
         self.phase += 2.0 * std.math.pi * self.frequency * delta_time;
         self.phase = @mod(self.phase, 2.0 * std.math.pi);
-        self.timestamp = std.time.nanoTimestamp();
+        self.timestamp = @as(i64, @truncate(std.time.nanoTimestamp()));
     }
 
     pub fn timestampI64(self: *const SignalState) i64 {
@@ -215,7 +215,7 @@ pub const SignalPropagationEngine = struct {
     }
 
     pub fn propagateStep(self: *Self) !void {
-        const start_time = std.time.nanoTimestamp();
+        const start_time = @as(i64, @truncate(std.time.nanoTimestamp()));
 
         var node_signals = StringHashMap(SignalState).init(self.allocator);
         defer {
@@ -248,7 +248,7 @@ pub const SignalPropagationEngine = struct {
 
                 var transmitted_signal = source_signal;
                 transmitted_signal.amplitude *= edge.weight;
-                transmitted_signal.phase += std.math.atan2(f64, edge.quantum_correlation.im, edge.quantum_correlation.re);
+                transmitted_signal.phase += std.math.atan2(edge.quantum_correlation.im, edge.quantum_correlation.re);
                 transmitted_signal.advance(self.time_step);
 
                 const target_id_copy = try self.allocator.dupe(u8, target_id);
@@ -305,7 +305,7 @@ pub const SignalPropagationEngine = struct {
         self.statistics.total_steps += 1;
         self.statistics.unique_nodes_activated = self.activation_traces.count();
 
-        const end_time = std.time.nanoTimestamp();
+        const end_time = @as(i64, @truncate(std.time.nanoTimestamp()));
         self.statistics.total_propagation_time += (end_time - start_time);
 
         if (self.statistics.total_steps > 0) {

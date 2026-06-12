@@ -17,9 +17,6 @@ pub fn main() !void {
         .rate_limit_per_minute = 60,
         .max_request_size_bytes = 1024 * 1024,
         .require_api_key = false,
-        .dataset_path = null,
-        .sample_limit = null,
-        .num_validation_samples = 100,
     };
 
     const args = try std.process.argsAlloc(allocator);
@@ -37,9 +34,6 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "--model") and i + 1 < args.len) {
             i += 1;
             config.model_path = args[i];
-        } else if (std.mem.eql(u8, arg, "--dataset") and i + 1 < args.len) {
-            i += 1;
-            config.dataset_path = args[i];
         } else if (std.mem.eql(u8, arg, "--require-api-key")) {
             config.require_api_key = true;
         } else if (std.mem.eql(u8, arg, "--help")) {
@@ -81,4 +75,3 @@ pub fn main() !void {
     };
 }
 
-================

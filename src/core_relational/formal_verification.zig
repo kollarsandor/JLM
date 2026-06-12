@@ -2415,7 +2415,7 @@ pub const TheoremProver = struct {
 
     pub fn applyRule(self: *Self, rule: ProofRule, premises: []const *Proposition, conclusion: *Proposition) !?*ProofStep {
         if (rule.minimumPremises() > premises.len) return null;
-        var step_id: u64 = @intCast(self.resolution_count + self.unification_count);
+        const step_id: u64 = @intCast(self.resolution_count + self.unification_count);
         var premise_indices = ArrayList(usize).init(self.allocator);
         defer premise_indices.deinit();
         const step = try ProofStep.init(self.allocator, step_id, rule, conclusion);
@@ -2625,7 +2625,7 @@ pub const FormalVerificationEngine = struct {
         return self.prove(implication);
     }
 
-    pub fn checkProofCompleteness(self: *Self, proof: *FormalProof) !bool {
+    pub fn checkProofCompleteness(_: *Self, proof: *FormalProof) !bool {
         return proof.validate();
     }
 
@@ -2892,4 +2892,3 @@ test "FormalVerificationEngine creation" {
     try testing.expectEqual(@as(u64, 0), stats.total_verifications);
 }
 
-================

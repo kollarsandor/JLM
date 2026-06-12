@@ -4409,4 +4409,3 @@ test "term construction application" {
     try std.testing.expect(app.sub_terms.items.len == 2);
 }
 
-================

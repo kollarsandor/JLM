@@ -357,6 +357,11 @@ pub const IBMQuantumClient = quantum_hardware.IBMQuantumClient;
 pub const QuantumClientStatistics = quantum_hardware.QuantumClientStatistics;
 pub const QuantumClassicalHybridOptimizer = quantum_hardware.QuantumClassicalHybridOptimizer;
 
+pub const SurpriseMemoryManager = surprise_memory.SurpriseMemoryManager;
+pub const VerifiedInferenceEngine = verified_inference_engine.VerifiedInferenceEngine;
+pub const ReasoningOrchestrator = reasoning_orchestrator.ReasoningOrchestrator;
+pub const SignalPropagationEngine = signal_propagation.SignalPropagationEngine;
+
 test "core_relational module integration" {
     const allocator = std.testing.allocator;
 
@@ -383,4 +388,3 @@ test "core_relational module integration" {
     try std.testing.expect(kernel.cycle_count == 0);
 }
 
-================

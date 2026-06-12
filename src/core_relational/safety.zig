@@ -206,12 +206,12 @@ pub const MonotonicClock = struct {
 
     pub fn init() Self {
         return Self{
-            .base_nano = std.time.nanoTimestamp(),
+            .base_nano = @as(i64, @truncate(std.time.nanoTimestamp())),
         };
     }
 
     pub fn now(self: *Self) i128 {
-        return std.time.nanoTimestamp() - self.base_nano;
+        return @as(i64, @truncate(std.time.nanoTimestamp())) - self.base_nano;
     }
 
     pub fn nowMillis(self: *Self) i64 {
@@ -404,4 +404,3 @@ test "secureCompare" {
     try testing.expect(!secureCompare(&a, &c));
 }
 
-================

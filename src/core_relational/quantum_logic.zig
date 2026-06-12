@@ -167,7 +167,7 @@ pub const QuantumState = struct {
             };
         }
         const norm = std.math.sqrt(norm_sq);
-        var result = Self{
+        const result = Self{
             .amplitudes = .{
                 Complex(f64).init(sum_0_re / norm, sum_0_im / norm),
                 Complex(f64).init(sum_1_re / norm, sum_1_im / norm),
@@ -231,7 +231,7 @@ pub const GateHistoryEntry = struct {
             }
         }
 
-        const raw_ts = std.time.nanoTimestamp();
+        const raw_ts = @as(i64, @truncate(std.time.nanoTimestamp()));
         const ts: i64 = if (raw_ts > std.math.maxInt(i64))
             std.math.maxInt(i64)
         else if (raw_ts < std.math.minInt(i64))
@@ -1365,4 +1365,3 @@ test "quantum_state_normalize_syncs_amplitude_fields" {
     try std.testing.expectApproxEqAbs(state.amplitudes[0].im, state.amplitudes[0].im, 0.0001);
 }
 
-================

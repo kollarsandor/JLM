@@ -639,7 +639,7 @@ pub fn importModel(path: []const u8, allocator: Allocator) !ModelFormat {
 
         var mgt = try allocator.create(MGT);
         errdefer allocator.destroy(mgt);
-        mgt.* = try MGT.init(allocator, words_const, &.{});
+        mgt.* = try MGT.init(allocator, words_const, &.{}, null, .english);
 
         for (words_list.items) |w| {
             allocator.free(w);
@@ -866,4 +866,3 @@ test "Metadata JSON serialization" {
     try testing.expectEqual(metadata.rsf_layers, parsed_metadata.rsf_layers);
 }
 
-================

@@ -486,7 +486,7 @@ pub const SelfSimilarRelationalGraph = struct {
     rng_mutex: Mutex,
 
     pub fn init(allocator: Allocator) !SelfSimilarRelationalGraph {
-        const ts = std.time.nanoTimestamp();
+        const ts = @as(i64, @truncate(std.time.nanoTimestamp()));
         const seed: u64 = std.hash.Wyhash.hash(0, std.mem.asBytes(&ts));
         var g = SelfSimilarRelationalGraph{
             .allocator = allocator,

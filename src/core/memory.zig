@@ -992,7 +992,7 @@ pub const BuddyAllocator = struct {
         defer self.mutex.unlock();
 
         const min_block_size = @as(usize, 1) << @intCast(self.min_order);
-        var base_needed = @max(size, min_block_size);
+        const base_needed = @max(size, min_block_size);
         var want_order: u32 = @intCast(std.math.log2_int_ceil(usize, base_needed));
         if (want_order < self.min_order) want_order = self.min_order;
 
@@ -1640,7 +1640,6 @@ pub fn secureZeroMemory(ptr: [*]u8, size: usize) void {
     var i: usize = 0;
     while (i < size) : (i += 1) p[i] = 0;
     _ = p[size - 1];
-    @fence(.seq_cst);
 }
 
 pub fn constantTimeCompare(a: []const u8, b: []const u8) bool {
@@ -1683,16 +1682,18 @@ pub fn pageAlignedSize(size: usize) usize {
 }
 
 pub fn memoryBarrier() void {
-    @fence(.seq_cst);
+    _ = @atomicLoad(u8, &fence_dummy, .seq_cst);
 }
 
 pub fn readMemoryFence() void {
-    @fence(.acquire);
+    _ = @atomicLoad(u8, &fence_dummy, .acquire);
 }
 
 pub fn writeMemoryFence() void {
-    @fence(.release);
+    @atomicStore(u8, &fence_dummy, 0, .release);
 }
+
+var fence_dummy: u8 = 0;
 
 pub fn compareExchangeMemory(ptr: *u64, expected: u64, desired: u64) bool {
     return @cmpxchgStrong(u64, ptr, expected, desired, .seq_cst, .seq_cst) == null;
@@ -1749,7 +1750,6 @@ pub fn secureErase(ptr: [*]u8, size: usize) void {
     i = 0;
     while (i < size) : (i += 1) p[i] = 0x00;
     _ = p[size - 1];
-    @fence(.seq_cst);
 }
 
 pub fn duplicateMemory(allocator: Allocator, data: []const u8) ![]u8 {

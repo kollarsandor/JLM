@@ -47,7 +47,7 @@ pub const HistoryEntry = struct {
         return Self{
             .entry_type = entry_type,
             .value = try allocator.dupe(u8, value),
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .allocator = allocator,
         };
     }
@@ -114,7 +114,7 @@ pub const ExecutionHistoryEntry = struct {
             .result_value = null,
             .result_int = null,
             .result_float = null,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .allocator = allocator,
         };
     }
@@ -1470,4 +1470,3 @@ test "ZRuntime executeQuantumCircuit" {
     try testing.expect(!fail);
 }
 
-================

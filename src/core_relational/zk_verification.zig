@@ -9,7 +9,7 @@ const Sha512 = crypto.hash.sha2.Sha512;
 const ChildProcess = std.process.Child;
 const fs = std.fs;
 const json = std.json;
-const i256 = std.math.Int(256);
+const @"i256" = std.math.Int(256);
 
 pub const ZKProofError = error{
     CircomCompilationFailed,
@@ -120,7 +120,7 @@ pub const ZKProofBundle = struct {
             .public_signals = PublicSignals.init(allocator),
             .proof_json = &[_]u8{},
             .public_json = &[_]u8{},
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .verification_status = false,
         };
         return self;
@@ -168,8 +168,8 @@ pub const CircomProver = struct {
     }
 
     fn ensureDirectories(self: *Self) !void {
-        try fs.cwd().makePath(self.config.witness_dir, .{});
-        try fs.cwd().makePath(self.config.proof_dir, .{});
+        try fs.cwd().makePath(self.config.witness_dir);
+        try fs.cwd().makePath(self.config.proof_dir);
     }
 
     fn checkPrerequisites(self: *Self) !void {
@@ -203,7 +203,7 @@ pub const CircomProver = struct {
         };
 
         var child = ChildProcess.init(args, self.allocator);
-        child.cwd = fs.cwd();
+        child.cwd = null;
 
         try child.spawn();
         const term = try child.wait();
@@ -231,7 +231,7 @@ pub const CircomProver = struct {
         };
 
         var child = ChildProcess.init(contribute_args, self.allocator);
-        child.cwd = fs.cwd();
+        child.cwd = null;
 
         try child.spawn();
         const term = try child.wait();
@@ -252,7 +252,7 @@ pub const CircomProver = struct {
         };
 
         var export_child = ChildProcess.init(export_args, self.allocator);
-        export_child.cwd = fs.cwd();
+        export_child.cwd = null;
 
         try export_child.spawn();
         const export_term = try export_child.wait();
@@ -286,13 +286,14 @@ pub const CircomProver = struct {
         };
 
         var child = ChildProcess.init(args, self.allocator);
-        child.cwd = fs.cwd();
+        child.cwd = null;
 
         try child.spawn();
         const term = try child.wait();
 
-        if (term != .{.Exited = 0}) {
-            return ZKProofError.WitnessGenerationFailed;
+        switch (term) {
+            .Exited => |code| if (code != 0) return ZKProofError.WitnessGenerationFailed,
+            else => return ZKProofError.WitnessGenerationFailed,
         }
     }
 
@@ -313,7 +314,7 @@ pub const CircomProver = struct {
         };
 
         var child = ChildProcess.init(args, self.allocator);
-        child.cwd = fs.cwd();
+        child.cwd = null;
 
         try child.spawn();
         const term = try child.wait();
@@ -336,7 +337,7 @@ pub const CircomProver = struct {
         };
 
         var child = ChildProcess.init(args, self.allocator);
-        child.cwd = fs.cwd();
+        child.cwd = null;
         child.stdout_behavior = .Pipe;
 
         try child.spawn();
@@ -374,9 +375,9 @@ pub const InferenceWitness = struct {
     pub fn init(allocator: Allocator, num_layers: usize, dim: usize) !*Self {
         const self = try allocator.create(Self);
 
-        const tokens = try allocator.calloc(i64, dim);
-        const expected_output = try allocator.calloc(i64, dim);
-        const layer_commitments = try allocator.calloc(i256, num_layers);
+        const tokens = blk: { const _s = try allocator.alloc(i64, dim); @memset(_s, 0); break :blk _s; };
+        const expected_output = blk: { const _s = try allocator.alloc(i64, dim); @memset(_s, 0); break :blk _s; };
+        const layer_commitments = blk: { const _s = try allocator.alloc(i256, num_layers); @memset(_s, 0); break :blk _s; };
 
         const layer_weights_s = try allocator.alloc([][]i64, num_layers);
         const layer_weights_t = try allocator.alloc([][]i64, num_layers);
@@ -397,8 +398,8 @@ pub const InferenceWitness = struct {
 
             var i: usize = 0;
             while (i < dim) : (i += 1) {
-                layer_weights_s[layer_idx][i] = try allocator.calloc(i64, dim);
-                layer_weights_t[layer_idx][i] = try allocator.calloc(i64, dim);
+                layer_weights_s[layer_idx][i] = blk: { const _s = try allocator.alloc(i64, dim); @memset(_s, 0); break :blk _s; };
+                layer_weights_t[layer_idx][i] = blk: { const _s = try allocator.alloc(i64, dim); @memset(_s, 0); break :blk _s; };
             }
         }
 
@@ -541,7 +542,11 @@ pub const InferenceWitness = struct {
     }
 
     fn bytesToI256(bytes: []const u8) i256 {
-        return std.mem.readInt(i256, bytes, .big);
+        var buf: [32]u8 = undefined;
+        const len = @min(bytes.len, 32);
+        @memcpy(buf[0..len], bytes[0..len]);
+        if (len < 32) @memset(buf[len..], 0);
+        return std.mem.readInt(i256, &buf, .big);
     }
 
     pub fn toJson(self: *Self, path: []const u8) !void {
@@ -556,7 +561,7 @@ pub const InferenceWitness = struct {
         var i: usize = 0;
         while (i < self.dim) : (i += 1) {
             if (i > 0) try writer.writeAll(", ");
-            try writer.print("{}", .{self.tokens[i]});
+            try writer.print("{d}", .{self.tokens[i]});
         }
         try writer.writeAll("],\n");
 
@@ -570,7 +575,7 @@ pub const InferenceWitness = struct {
                 var j: usize = 0;
                 while (j < self.dim) : (j += 1) {
                     if (j > 0) try writer.writeAll(", ");
-                    try writer.print("{}", .{self.layer_weights_s[layer][i][j]});
+                    try writer.print("{d}", .{self.layer_weights_s[layer][i][j]});
                 }
                 try writer.writeAll("]");
                 if (i < self.dim - 1) try writer.writeAll(",");
@@ -592,7 +597,7 @@ pub const InferenceWitness = struct {
                 var j: usize = 0;
                 while (j < self.dim) : (j += 1) {
                     if (j > 0) try writer.writeAll(", ");
-                    try writer.print("{}", .{self.layer_weights_t[layer][i][j]});
+                    try writer.print("{d}", .{self.layer_weights_t[layer][i][j]});
                 }
                 try writer.writeAll("]");
                 if (i < self.dim - 1) try writer.writeAll(",");
@@ -608,22 +613,22 @@ pub const InferenceWitness = struct {
         i = 0;
         while (i < self.dim) : (i += 1) {
             if (i > 0) try writer.writeAll(", ");
-            try writer.print("{}", .{self.expected_output[i]});
+            try writer.print("{d}", .{self.expected_output[i]});
         }
         try writer.writeAll("],\n");
 
-        try writer.print("  \"input_commitment\": \"{}\",\n", .{self.input_commitment});
-        try writer.print("  \"output_commitment\": \"{}\",\n", .{self.output_commitment});
+        try writer.print("  \"input_commitment\": \"{d}\",\n", .{self.input_commitment});
+        try writer.print("  \"output_commitment\": \"{d}\",\n", .{self.output_commitment});
 
         try writer.writeAll("  \"layer_commitments\": [");
         layer = 0;
         while (layer < self.num_layers) : (layer += 1) {
             if (layer > 0) try writer.writeAll(", ");
-            try writer.print("\"{}\"", .{self.layer_commitments[layer]});
+            try writer.print("\"{d}\"", .{self.layer_commitments[layer]});
         }
         try writer.writeAll("],\n");
 
-        try writer.print("  \"max_error_squared\": {}\n", .{self.max_error_squared});
+        try writer.print("  \"max_error_squared\": {d}\n", .{self.max_error_squared});
         try writer.writeAll("}\n");
     }
 };
@@ -743,7 +748,7 @@ pub const ZKInferenceProver = struct {
 
         var tmp_dir_buf: [256]u8 = undefined;
         const tmp_dir_path = try std.fmt.bufPrint(&tmp_dir_buf, "/tmp/zk_verify_{s}", .{nonce});
-        try fs.cwd().makePath(tmp_dir_path, .{});
+        try fs.cwd().makePath(tmp_dir_path);
 
         const proof_path = try std.fmt.allocPrint(
             self.allocator,
@@ -828,7 +833,7 @@ pub const CommitmentScheme = struct {
         const commitment = Commitment{
             .value_hash = value_hash,
             .nonce = nonce,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .blinding_factor = blinding,
         };
 
@@ -1244,7 +1249,7 @@ pub const ZKInferenceProof = struct {
             .input_commitment = undefined,
             .output_commitment = undefined,
             .computation_proof = ArrayList([32]u8).init(allocator),
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .zk_prover = null,
             .proof_bundle = null,
         };
@@ -1258,7 +1263,7 @@ pub const ZKInferenceProof = struct {
             .input_commitment = undefined,
             .output_commitment = undefined,
             .computation_proof = ArrayList([32]u8).init(allocator),
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @truncate(std.time.nanoTimestamp()),
             .zk_prover = try ZKInferenceProver.init(allocator),
             .proof_bundle = null,
         };
@@ -1443,7 +1448,8 @@ pub const SecureAggregation = struct {
         }
 
         const dim = contributions[0].len;
-        const result = try self.allocator.calloc(f64, dim);
+        const result = try self.allocator.alloc(f64, dim);
+        @memset(result, 0.0);
         errdefer self.allocator.free(result);
 
         for (contributions) |contrib| {
@@ -1475,4 +1481,3 @@ pub const SecureAggregation = struct {
     }
 };
 
-================

@@ -769,9 +769,9 @@ pub const SSI = struct {
             rebuilt.deinit();
             return;
         }
-        var old_root = self.root;
-        var old_height = self.height;
-        var old_size = self.size;
+        const old_root = self.root;
+        const old_height = self.height;
+        const old_size = self.size;
         self.root = rebuilt.root;
         self.height = rebuilt.height;
         self.size = rebuilt.size;

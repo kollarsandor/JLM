@@ -428,7 +428,7 @@ pub const DatasetFingerprint = struct {
         const fingerprint = FingerprintData{
             .sample_hash = sample_hash,
             .encrypted_features = encrypted_features,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @as(i64, @truncate(std.time.nanoTimestamp())),
             .access_count = 0,
             .similarity_threshold = 0.9,
         };
@@ -701,7 +701,7 @@ pub const ProofOfCorrectness = struct {
             .input_hash = input_hash,
             .output_hash = output_hash,
             .operation_type = op_type,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @as(i64, @truncate(std.time.nanoTimestamp())),
         };
 
         try self.computation_trace.append(step);
@@ -830,7 +830,7 @@ pub const DatasetIsolation = struct {
         var access_key: [32]u8 = undefined;
         crypto.random.bytes(&access_key);
 
-        const current_time = std.time.nanoTimestamp();
+        const current_time = @as(i64, @truncate(std.time.nanoTimestamp()));
         const expiry = if (expiry_seconds) |secs| current_time + @as(i128, secs) * std.time.ns_per_s else null;
 
         const barrier = IsolationBarrier{
@@ -864,7 +864,7 @@ pub const DatasetIsolation = struct {
         const barrier = &self.isolation_barriers.items[barrier_idx];
 
         if (barrier.expiry_time) |expiry| {
-            if (std.time.nanoTimestamp() > expiry) {
+            if (@as(i64, @truncate(std.time.nanoTimestamp())) > expiry) {
                 return error.BarrierExpired;
             }
         }
@@ -874,7 +874,7 @@ pub const DatasetIsolation = struct {
                 return error.AccessLimitExceeded;
             }
             policy.current_accesses += 1;
-            policy.last_access_time = std.time.nanoTimestamp();
+            policy.last_access_time = @as(i64, @truncate(std.time.nanoTimestamp()));
         }
 
         var op_hasher = Blake3.init(.{});
@@ -888,7 +888,7 @@ pub const DatasetIsolation = struct {
         client_hasher.final(&client_hash);
 
         const record = AccessRecord{
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @as(i64, @truncate(std.time.nanoTimestamp())),
             .operation_hash = op_hash,
             .success = success,
             .client_hash = client_hash,
@@ -905,7 +905,7 @@ pub const DatasetIsolation = struct {
         const barrier = &self.isolation_barriers.items[barrier_idx];
 
         if (barrier.expiry_time) |expiry| {
-            if (std.time.nanoTimestamp() > expiry) {
+            if (@as(i64, @truncate(std.time.nanoTimestamp())) > expiry) {
                 return false;
             }
         }
@@ -914,4 +914,3 @@ pub const DatasetIsolation = struct {
     }
 };
 
-================

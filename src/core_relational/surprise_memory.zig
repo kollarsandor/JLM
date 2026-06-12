@@ -37,8 +37,7 @@ fn sanitizeThreshold(value: f64) f64 {
 }
 
 fn monotonicNowNs() i128 {
-    const instant = std.time.Instant.now() catch return std.time.nanoTimestamp();
-    return @as(i128, @intCast(instant.since(std.time.Instant.unix_epoch catch unreachable)));
+    return std.time.nanoTimestamp();
 }
 
 fn stableMonotonicNow(previous: ?i128) i128 {

@@ -46,7 +46,7 @@ pub const TensorIterator = struct {
     }
 };
 
-const Shape = struct {
+pub const Shape = struct {
     dims: []usize,
     strides: []usize,
     total_size: usize,
@@ -735,8 +735,8 @@ pub const Tensor = struct {
         const total = tensor.shape.totalSize();
         var i: usize = 0;
         while (i < total) : (i += 1) {
-            var u = 1.0 - prng.float();
-            var v = 1.0 - prng.float();
+            const u = 1.0 - prng.float();
+            const v = 1.0 - prng.float();
             tensor.data[i] = mean_value + stddev_value * (@sqrt(-2.0 * @log(u)) * @cos(2.0 * math.pi * v));
         }
         return tensor;
@@ -1142,6 +1142,42 @@ pub const Tensor = struct {
             }
         }
         return determinant;
+    }
+
+    pub fn save(self: *const Tensor, writer: anytype) !void {
+        const ndim: u64 = @intCast(self.shape.dims.len);
+        try writer.writeInt(u64, ndim, .little);
+        for (self.shape.dims) |d| try writer.writeInt(u64, @intCast(d), .little);
+        for (self.data) |v| try writer.writeInt(u32, @bitCast(v), .little);
+    }
+
+    pub fn load(allocator: Allocator, reader: anytype) !Tensor {
+        const ndim = try reader.readInt(u64, .little);
+        if (ndim == 0 or ndim > 8) return Error.InvalidShape;
+        var dims: [8]usize = undefined;
+        var i: usize = 0;
+        while (i < ndim) : (i += 1) {
+            const d = try reader.readInt(u64, .little);
+            if (d == 0) return Error.InvalidShape;
+            dims[i] = @intCast(d);
+        }
+        var t = try Tensor.init(allocator, dims[0..ndim]);
+        errdefer t.deinit();
+        var j: usize = 0;
+        while (j < t.data.len) : (j += 1) {
+            t.data[j] = @bitCast(try reader.readInt(u32, .little));
+        }
+        return t;
+    }
+
+    pub fn eye(allocator: Allocator, dims: []const usize) !Tensor {
+        if (dims.len != 2 or dims[0] != dims[1]) return Error.InvalidShape;
+        var tensor = try init(allocator, dims);
+        try tensor.fill(0.0);
+        const n = dims[0];
+        var i: usize = 0;
+        while (i < n) : (i += 1) tensor.data[i * n + i] = 1.0;
+        return tensor;
     }
 
     pub fn inverse(self: *const Tensor, allocator: Allocator) !Tensor {

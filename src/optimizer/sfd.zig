@@ -608,7 +608,7 @@ pub const KFACBlock = struct {
         }
         const frob: f32 = @floatCast(@sqrt(frob_sq));
         if (frob < 1e-12) {
-            var result = try Tensor.eye(self.allocator, M.shape.dims);
+            const result = try Tensor.eye(self.allocator, M.shape.dims);
             return result;
         }
 
@@ -2638,4 +2638,3 @@ test "MARSVarianceReducer config" {
     try std.testing.expectEqual(@as(usize, 50), mars.snapshot_freq);
 }
 
-================

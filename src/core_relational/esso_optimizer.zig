@@ -229,8 +229,8 @@ const SymmetryTransform = struct {
     }
 
     pub fn applyToQuantumState(self: *const Self, state: *const QuantumState) QuantumState {
-        var new_real = state.amplitude_real;
-        var new_imag = state.amplitude_imag;
+        var new_real = state.amplitudes[0].re;
+        var new_imag = state.amplitudes[0].im;
         var new_phase = state.phase;
 
         switch (self.group) {
@@ -239,10 +239,10 @@ const SymmetryTransform = struct {
                 const a = 2.0 * self.parameters[3];
                 const ca = @cos(a);
                 const sa = @sin(a);
-                const r = state.amplitude_real;
-                const i = state.amplitude_imag;
-                new_real = r * ca + i * sa;
-                new_imag = r * sa - i * ca;
+                const r = state.amplitudes[0].re;
+                const im = state.amplitudes[0].im;
+                new_real = r * ca + im * sa;
+                new_imag = r * sa - im * ca;
                 new_phase = -state.phase + 2.0 * self.parameters[3];
             },
             .rotation_90, .rotation_180, .rotation_270, .custom_rotation => {
@@ -253,8 +253,10 @@ const SymmetryTransform = struct {
         new_phase = normalizeAngle(new_phase);
 
         return QuantumState{
-            .amplitude_real = new_real,
-            .amplitude_imag = new_imag,
+            .amplitudes = .{
+                Complex(f64).init(new_real, new_imag),
+                state.amplitudes[1],
+            },
             .phase = new_phase,
             .entanglement_degree = state.entanglement_degree,
         };
@@ -1046,10 +1048,8 @@ pub const EntangledStochasticSymmetryOptimizer = struct {
             try pattern.addNode(entry.key_ptr.*);
         }
         try self.symmetry_transforms.append(transform);
-        var transform_appended = true;
-        errdefer if (transform_appended) _ = self.symmetry_transforms.pop();
+        errdefer _ = self.symmetry_transforms.pop();
         try self.detected_patterns.append(pattern);
-        transform_appended = false;
     }
 
     pub fn optimize(self: *Self, graph: *const SelfSimilarRelationalGraph, objective_fn: ?ObjectiveFunction) !*SelfSimilarRelationalGraph {
@@ -1667,7 +1667,7 @@ pub const EntangledStochasticSymmetryOptimizer = struct {
 
         var best_rot_order: usize = 0;
         var best_rot_score: f64 = 0.0;
-        var candidate_orders = [_]usize{ 2, 3, 4, 6 };
+        const candidate_orders = [_]usize{ 2, 3, 4, 6 };
         for (candidate_orders) |order| {
             const test_angle = 2.0 * std.math.pi / @as(f64, @floatFromInt(order));
             var rot_score: f64 = 0.0;

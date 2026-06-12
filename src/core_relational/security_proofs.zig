@@ -3629,4 +3629,3 @@ test "SecurityProofEngine integrity proof" {
     try std.testing.expect(proof.is_valid);
 }
 
-================

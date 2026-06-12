@@ -265,7 +265,7 @@ pub const HealthResponse = struct {
         try writer.writeAll("{");
         try writer.print("\"status\":\"{s}\",", .{self.status});
         try writer.print("\"uptime_seconds\":{d},", .{self.uptime_seconds});
-        try writer.print("\"model_loaded\":{},", .{self.model_loaded});
+        try writer.print("\"model_loaded\":{s},", .{if (self.model_loaded) "true" else "false"});
         try writer.print("\"version\":\"{s}\"", .{self.version});
         try writer.writeAll("}");
 
@@ -498,9 +498,7 @@ pub const InferenceServer = struct {
 
             const active = self.active_connections.load(.monotonic);
             if (active >= self.config.max_connections) {
-                var err_buf: [256]u8 = undefined;
-                const err_resp = std.fmt.bufPrint(&err_buf, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 39\r\n\r\n{{\"error\":\"Too many connections\"}}", .{}) catch unreachable;
-                _ = connection.stream.writeAll(err_resp) catch {};
+                _ = connection.stream.writeAll("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 39\r\n\r\n{\"error\":\"Too many connections\"}") catch {};
                 connection.stream.close();
                 continue;
             }
@@ -515,12 +513,12 @@ pub const InferenceServer = struct {
                 .client_addr = connection.address,
             };
 
-            self.active_connections.fetchAdd(1, .monotonic);
+            _ = self.active_connections.fetchAdd(1, .monotonic);
 
             self.thread_pool.?.spawn(handleConnectionWork, .{ctx}) catch {
                 self.allocator.destroy(ctx);
                 connection.stream.close();
-                self.active_connections.fetchSub(1, .monotonic);
+                _ = self.active_connections.fetchSub(1, .monotonic);
                 continue;
             };
         }
@@ -530,7 +528,7 @@ pub const InferenceServer = struct {
         const server = ctx.server;
         defer {
             server.allocator.destroy(ctx);
-            server.active_connections.fetchSub(1, .monotonic);
+            _ = server.active_connections.fetchSub(1, .monotonic);
         }
 
         server.handleStreamConnection(ctx.stream, ctx.client_addr) catch {};
@@ -543,7 +541,7 @@ pub const InferenceServer = struct {
     fn setSocketTimeout(stream: net.Stream, timeout_ms: u64) void {
         const sec: i64 = @intCast(timeout_ms / 1000);
         const usec: i64 = @intCast((timeout_ms % 1000) * 1000);
-        var tv = std.posix.timeval{ .tv_sec = sec, .tv_usec = usec };
+        var tv = std.posix.timeval{ .sec = sec, .usec = usec };
         const optval = std.mem.asBytes(&tv);
         _ = std.posix.setsockopt(stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, optval) catch {};
     }
@@ -628,8 +626,8 @@ pub const InferenceServer = struct {
                 }
             }
 
-            var body_start = headers_end + 4;
-            var body = if (body_start < request_data.len) request_data[body_start..] else "";
+            const body_start = headers_end + 4;
+            const body = if (body_start < request_data.len) request_data[body_start..] else "";
 
             if (body.len < content_length and content_length <= self.config.max_request_size_bytes) {
                 var total_body_read: usize = body.len;
@@ -640,7 +638,7 @@ pub const InferenceServer = struct {
                     if (bytes_read == 0) break;
                     try request_buf.appendSlice(tmp_buf[0..bytes_read]);
                     total_body_read += bytes_read;
-                    body = request_buf.items[body_start..];
+                    _ = request_buf.items[body_start..];
                 }
             }
 
@@ -895,7 +893,7 @@ pub const InferenceServer = struct {
             }
 
             if (self.temporal_graph) |*tg| {
-                const now_ns = std.time.nanoTimestamp();
+                const now_ns: i64 = @truncate(std.time.nanoTimestamp());
                 if (self.nsir_graph) |*graph| {
                     var node_iter = graph.nodes.iterator();
                     while (node_iter.next()) |entry| {
@@ -911,12 +909,12 @@ pub const InferenceServer = struct {
                         tg.addNodeAtTime(node.id, qs, now_ns) catch {};
                     }
                 }
-                const after_ns = std.time.nanoTimestamp();
+                const after_ns: i64 = @truncate(std.time.nanoTimestamp());
                 tg.advanceTime(after_ns - now_ns);
             }
 
             if (self.verifier) |v| {
-                var output_buf = allocator.alloc(f32, input_tensor.data.len) catch null;
+                const output_buf = allocator.alloc(f32, input_tensor.data.len) catch null;
                 if (output_buf) |obuf| {
                     defer allocator.free(obuf);
                     v.performVerifiedInference(input_tensor.data, obuf) catch {};
@@ -947,7 +945,7 @@ pub const InferenceServer = struct {
             const is_anchor = (self.request_count.load(.monotonic) % 10 == 0);
             ssi_idx.addSequence(final_tokens, self.request_count.load(.monotonic), is_anchor) catch {};
         }
-        self.request_count.fetchAdd(1, .monotonic);
+        _ = self.request_count.fetchAdd(1, .monotonic);
 
         var owned_embeddings: ?[]f32 = embeddings;
         var owned_input_tokens: ?[]u32 = null;
@@ -1282,7 +1280,7 @@ pub const InferenceServer = struct {
 
             self.inference_mutex.unlock();
 
-            self.request_count.fetchAdd(1, .monotonic);
+            _ = self.request_count.fetchAdd(1, .monotonic);
 
             var generated_text: ?[]const u8 = null;
             if (generated.items.len > tokens.items.len) {
@@ -1323,7 +1321,8 @@ pub const InferenceServer = struct {
                 }
                 try writer.writeAll("\"");
             }
-            try writer.print(",\"processing_time_ms\":{d:.2}}", .{processing_time});
+            try writer.print(",\"processing_time_ms\":{d:.2}", .{processing_time});
+            try writer.writeByte('}');
         }
 
         try writer.writeAll("]}");
