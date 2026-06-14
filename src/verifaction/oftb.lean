@@ -1,5 +1,3 @@
-set_option linter.unusedVariables false
-
 variable {F : Type}
 
 def succ_not_zero (n : Nat) (h : Nat.succ n = 0) : False :=
@@ -47,7 +45,7 @@ theorem split_at_lengths_gen : (n m : Nat) → (L : List F) → L.length = n + m
   ⟨Eq.refl 0, Eq.trans h (nat_zero_add m)⟩
 | Nat.succ n, m, [], h =>
   False.elim (zero_not_succ (n + m) (Eq.trans h (nat_succ_add n m)))
-| Nat.succ n, m, x :: xs, h =>
+| Nat.succ n, m, _ :: xs, h =>
   let h' : Nat.succ xs.length = Nat.succ (n + m) := Eq.trans h (nat_succ_add n m)
   let h_len : xs.length = n + m := succ_inj h'
   let rec_res := split_at_lengths_gen n m xs h_len
@@ -64,6 +62,7 @@ theorem split_at_reconstruct : (n : Nat) → (L : List F) →
 theorem split_at_append : (n : Nat) → (L1 L2 : List F) → L1.length = n →
   split_at n (L1 ++ L2) = (L1, L2)
 | 0, [], L2, _ => Eq.refl ([], L2)
+| 0, _ :: _, _, h => False.elim (succ_not_zero _ h)
 | Nat.succ n, x :: xs, L2, h =>
   let h_rec := split_at_append n xs L2 (succ_inj h)
   congrArg (fun p => (x :: p.1, p.2)) h_rec
@@ -72,7 +71,7 @@ theorem split_at_append : (n : Nat) → (L1 L2 : List F) → L1.length = n →
 theorem length_zipWith : (f : F → F → F) → (L1 L2 : List F) → L1.length = L2.length →
   (List.zipWith f L1 L2).length = L1.length
 | _, [], [], _ => Eq.refl 0
-| f, x :: xs, y :: ys, h =>
+| f, _ :: xs, _ :: ys, h =>
   let h_len : xs.length = ys.length := succ_inj h
   congrArg Nat.succ (length_zipWith f xs ys h_len)
 | _, _ :: _, [], h => False.elim (succ_not_zero _ h)
@@ -80,7 +79,7 @@ theorem length_zipWith : (f : F → F → F) → (L1 L2 : List F) → L1.length 
 
 theorem length_append : (L1 L2 : List F) → (L1 ++ L2).length = L1.length + L2.length
 | [], L2 => Eq.symm (nat_zero_add L2.length)
-| x :: xs, L2 =>
+| _ :: xs, L2 =>
   Eq.trans (congrArg Nat.succ (length_append xs L2)) (Eq.symm (nat_succ_add xs.length L2.length))
 
 structure ScaleAlgebra (F : Type) where
@@ -361,8 +360,8 @@ theorem valid_shape_empty_is_false : ¬ ValidShape [] :=
   fun h => h
 
 theorem valid_shape_zero_is_false : (xs : List Nat) → ¬ ValidShape (0 :: xs)
-| [] => fun (h : 0 > 0) => Nat.lt_irrefl 0 h
-| _ :: _ => fun (h : 0 > 0 ∧ ValidShape _) => Nat.lt_irrefl 0 h.left
+| [] => fun h => Nat.lt_irrefl 0 h
+| _ :: _ => fun h => Nat.lt_irrefl 0 h.left
 
 def usize_max : Nat := 18446744073709551615
 
@@ -402,8 +401,31 @@ theorem length_forwardCore (sa : ScaleAlgebra F) (dim : Nat) (L : List F) (h : L
     congr_add h_x1_new_len h_x2_new_len
   Eq.trans step1 step2
 
+theorem length_backwardCore (sa : ScaleAlgebra F) (dim : Nat) (L : List F) (h : L.length = dim + dim) :
+  (backwardCore sa dim L).length = dim + dim :=
+  let g1 := (split_at dim L).1
+  let g2 := (split_at dim L).2
+  let h_splits : g1.length = dim ∧ g2.length = dim := split_at_lengths_gen dim dim L h
+  let g1_new := List.zipWith (fun a b => sa.mul (sa.add a b) sa.scale) g1 g2
+  let g2_new := List.zipWith (fun a b => sa.mul (sa.sub b a) sa.scale) g1 g2
+  let h_g1_new_len : g1_new.length = dim :=
+    Eq.trans (length_zipWith (fun a b => sa.mul (sa.add a b) sa.scale) g1 g2 (Eq.trans h_splits.left (Eq.symm h_splits.right))) h_splits.left
+  let h_g2_new_len : g2_new.length = dim :=
+    Eq.trans (length_zipWith (fun a b => sa.mul (sa.sub b a) sa.scale) g1 g2 (Eq.trans h_splits.left (Eq.symm h_splits.right))) h_splits.left
+  let h_append := length_append g1_new g2_new
+  let step1 : (g1_new ++ g2_new).length = g1_new.length + g2_new.length := h_append
+  let step2 : g1_new.length + g2_new.length = dim + dim :=
+    congr_add h_g1_new_len h_g2_new_len
+  Eq.trans step1 step2
+
 theorem mix_round_trip (sa : ScaleAlgebra F) (dim : Nat) (L : List F) (h : transform_precondition dim L) :
   let h_forward_pre : transform_precondition dim (mixForwardCore sa dim L h) :=
     ⟨h.left, length_forwardCore sa dim L h.right⟩
   mixBackwardCore sa dim (mixForwardCore sa dim L h) h_forward_pre = L :=
   oftb_invertible sa dim L h.right
+
+theorem mix_round_trip_rev (sa : ScaleAlgebra F) (dim : Nat) (L : List F) (h : transform_precondition dim L) :
+  let h_backward_pre : transform_precondition dim (mixBackwardCore sa dim L h) :=
+    ⟨h.left, length_backwardCore sa dim L h.right⟩
+  mixForwardCore sa dim (mixBackwardCore sa dim L h) h_backward_pre = L :=
+  oftb_invertible_rev sa dim L h.right
