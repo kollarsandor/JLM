@@ -84,7 +84,7 @@ fn ensureFiniteSlice(data: []const f32) !void {
 }
 
 fn zeroTensor(t: *Tensor) void {
-    @memset(t.data, 0.0);
+    @memset(t.data, @as(f32, 0.0));
 }
 
 fn tensorsOverlap(a: *const Tensor, b: *const Tensor) bool {
@@ -293,6 +293,7 @@ const LayerCore = struct {
     }
 
     fn forwardInPlace(self: *const LayerCore, x1: *Tensor, x2: *Tensor, scale: []f32, trans: []f32) !void {
+        if (scale.len < self.dim or trans.len < self.dim) return error.DataLengthMismatch;
         if (tensorsOverlap(x1, x2)) return error.AliasedBuffers;
         const batch_size = try self.validatePair(x1, x2);
 
@@ -314,6 +315,7 @@ const LayerCore = struct {
     }
 
     fn inverseInPlace(self: *const LayerCore, y1: *Tensor, y2: *Tensor, scale: []f32, trans: []f32) !void {
+        if (scale.len < self.dim or trans.len < self.dim) return error.DataLengthMismatch;
         if (tensorsOverlap(y1, y2)) return error.AliasedBuffers;
         const batch_size = try self.validatePair(y1, y2);
 
@@ -349,6 +351,7 @@ const LayerCore = struct {
         grad_scale: f32,
     ) !void {
         const dim = self.dim;
+        if (!std.math.isFinite(grad_scale)) return error.NonFinite;
         if (y1_row.len != dim or y2_row.len != dim) return error.ShapeMismatch;
         if (dy1_row.len != dim or dy2_row.len != dim) return error.ShapeMismatch;
         if (x1_row_out.len != dim or x2_row_out.len != dim) return error.ShapeMismatch;
@@ -478,6 +481,7 @@ fn acquireRegistryCore(
     defer mutex.unlock();
     const entry = registry.getPtr(id) orelse return error.NotInitialized;
     if (entry.destroyed) return error.NotInitialized;
+    if (entry.active_ops == std.math.maxInt(usize)) return error.TooManyActiveOperations;
     entry.active_ops += 1;
     return entry.core;
 }
@@ -580,7 +584,7 @@ pub const RSFLayer = struct {
     }
 
     pub fn initWithConfig(allocator: Allocator, dim: usize, config: RSFLayerConfig) !RSFLayer {
-        var core = try allocator.create(LayerCore);
+        const core = try allocator.create(LayerCore);
         errdefer allocator.destroy(core);
 
         core.* = try LayerCore.initOwned(allocator, dim, config);
@@ -810,6 +814,8 @@ fn forwardOnCore(core: *const RSFCore, x: *Tensor) !void {
     const trans = try allocator.alloc(f32, core.dim);
     defer allocator.free(trans);
 
+    const oftb_scale: f32 = @floatCast(OFTB.FRACTAL_SCALE);
+
     var l: usize = 0;
     while (l < layer_count) : (l += 1) {
         const layer = &core.layers[l];
@@ -829,8 +835,6 @@ fn forwardOnCore(core: *const RSFCore, x: *Tensor) !void {
             i = 0;
             while (i < core.dim) : (i += 1) x2_row[i] += trans[i];
 
-            // OFTB butterfly mixing after each coupling layer
-            const oftb_scale = OFTB.FRACTAL_SCALE;
             i = 0;
             while (i < core.dim) : (i += 1) {
                 const a = x1_row[i];
@@ -859,6 +863,8 @@ fn inverseOnCore(core: *const RSFCore, y: *Tensor) !void {
     const scale = try allocator.alloc(f32, core.dim);
     defer allocator.free(scale);
 
+    const oftb_scale: f32 = @floatCast(OFTB.FRACTAL_SCALE);
+
     var idx = layer_count;
     while (idx > 0) : (idx -= 1) {
         const layer = &core.layers[idx - 1];
@@ -868,8 +874,6 @@ fn inverseOnCore(core: *const RSFCore, y: *Tensor) !void {
             const y1_row = row[0..core.dim];
             const y2_row = row[core.dim..dim2];
 
-            // OFTB backward (inverse) before RSF coupling inverse
-            const oftb_scale = OFTB.FRACTAL_SCALE;
             var i: usize = 0;
             while (i < core.dim) : (i += 1) {
                 const a = y1_row[i];
@@ -894,6 +898,7 @@ fn inverseOnCore(core: *const RSFCore, y: *Tensor) !void {
 fn backwardOnCore(core: *RSFCore, grad_output: *const Tensor, input: *const Tensor, output: *const Tensor, grad_input_out: *Tensor) !void {
     try validateTensor2D(grad_output);
     try validateTensor2D(input);
+    try validateTensor2D(output);
     try validateTensor2D(grad_input_out);
 
     const layer_count = try checkedModelLayerCount(core);
@@ -902,6 +907,7 @@ fn backwardOnCore(core: *RSFCore, grad_output: *const Tensor, input: *const Tens
 
     if (input.shape.dims[1] != dim2) return error.ShapeMismatch;
     if (!tensorsSameShape(grad_output, input)) return error.ShapeMismatch;
+    if (!tensorsSameShape(output, input)) return error.ShapeMismatch;
     if (!tensorsSameShape(grad_input_out, input)) return error.ShapeMismatch;
 
     const batch_size = input.shape.dims[0];
@@ -938,6 +944,9 @@ fn backwardOnCore(core: *RSFCore, grad_output: *const Tensor, input: *const Tens
     defer allocator.free(dy1_total);
     const ds = try allocator.alloc(f32, dim);
     defer allocator.free(ds);
+
+    const oftb_scale: f32 = @floatCast(OFTB.FRACTAL_SCALE);
+
     var b: usize = 0;
     while (b < batch_size) : (b += 1) {
         @memcpy(y1_row, output.data[b * dim2 .. b * dim2 + dim]);
@@ -948,11 +957,9 @@ fn backwardOnCore(core: *RSFCore, grad_output: *const Tensor, input: *const Tens
 
         var idx = layer_count;
         while (idx > 0) : (idx -= 1) {
-            // OFTB backward before RSF coupling backward
-            const oftb_scale = OFTB.FRACTAL_SCALE;
             {
                 var i: usize = 0;
-                while (i < core.dim) : (i += 1) {
+                while (i < dim) : (i += 1) {
                     const a = y1_row[i];
                     const b_val = y2_row[i];
                     y1_row[i] = (a + b_val) * oftb_scale;
@@ -961,7 +968,7 @@ fn backwardOnCore(core: *RSFCore, grad_output: *const Tensor, input: *const Tens
             }
             {
                 var i: usize = 0;
-                while (i < core.dim) : (i += 1) {
+                while (i < dim) : (i += 1) {
                     const a = dy1_row[i];
                     const b_val = dy2_row[i];
                     dy1_row[i] = (a + b_val) * oftb_scale;
@@ -1023,7 +1030,7 @@ fn disableGPU(core: *RSFCore) void {
 }
 
 fn validateF16Convertible(data: []const f32) !void {
-    const max_f16 = std.math.floatMax(f16);
+    const max_f16: f32 = @floatCast(std.math.floatMax(f16));
     for (data) |v| {
         if (!std.math.isFinite(v)) return error.NonFinite;
         if (@abs(v) > max_f16) return error.NumericFailure;
@@ -1034,6 +1041,15 @@ fn uploadLayerToAccel(core: *RSFCore, layer: *const LayerCore, ga: *accel.RSFAcc
     const dim_sq = try checkedMul(core.dim, core.dim);
     if (f16_buf.len < dim_sq) return error.DataLengthMismatch;
     if (bias_f16.len < core.dim) return error.DataLengthMismatch;
+
+    try validateTensor2DShape(&layer.s_weight, core.dim, core.dim);
+    try validateTensor2DShape(&layer.t_weight, core.dim, core.dim);
+    try validateTensor2DShape(&layer.s_bias, 1, core.dim);
+    try validateTensor2DShape(&layer.t_bias, 1, core.dim);
+    try validateF16Convertible(layer.s_weight.data);
+    try validateF16Convertible(layer.t_weight.data);
+    try validateF16Convertible(layer.s_bias.data);
+    try validateF16Convertible(layer.t_bias.data);
 
     var i: usize = 0;
     while (i < dim_sq) : (i += 1) f16_buf[i] = @floatCast(layer.s_weight.data[i]);
@@ -1206,14 +1222,15 @@ const SavedModelSnapshot = struct {
     layers: []SavedLayerSnapshot,
 
     fn deinit(self: *SavedModelSnapshot) void {
-        for (self.layers) |*layer| {
+        const layers = self.layers;
+        self.layers = layers[0..0];
+        for (layers) |*layer| {
             layer.s_weight.deinit();
             layer.t_weight.deinit();
             layer.s_bias.deinit();
             layer.t_bias.deinit();
         }
-        self.allocator.free(self.layers);
-        self.layers = &[_]SavedLayerSnapshot{};
+        if (layers.len != 0) self.allocator.free(layers);
     }
 };
 
@@ -1221,7 +1238,7 @@ fn snapshotModelForSave(allocator: Allocator, core: *const RSFCore) !SavedModelS
     try validateModelMetadata(core);
     const layer_count = core.layers.len;
 
-    var layers = try allocator.alloc(SavedLayerSnapshot, layer_count);
+    const layers = try allocator.alloc(SavedLayerSnapshot, layer_count);
     errdefer allocator.free(layers);
 
     var initialized: usize = 0;
@@ -1287,7 +1304,7 @@ pub const RSF = struct {
         _ = try checkedMul(dim, dim);
         _ = try checkedMul(dim, 2);
 
-        var core = try allocator.create(RSFCore);
+        const core = try allocator.create(RSFCore);
         errdefer allocator.destroy(core);
 
         core.* = .{
@@ -1509,7 +1526,7 @@ pub const RSF = struct {
         defer file.close();
 
         var buffered = std.io.bufferedReader(file.reader());
-        var r = buffered.reader();
+        const r = buffered.reader();
 
         var magic: [4]u8 = undefined;
         try r.readNoEof(&magic);
@@ -1566,7 +1583,7 @@ pub const RSF = struct {
         };
         try validateModelConfigValues(dim, num_layers, loaded_cfg);
 
-        var core = try allocator.create(RSFCore);
+        const core = try allocator.create(RSFCore);
         errdefer allocator.destroy(core);
 
         core.* = .{
@@ -1617,13 +1634,13 @@ pub const RSF = struct {
             crcUpdateU32LE(&hasher, layer_clip_max_bits);
             crcUpdateU8(&hasher, if (layer_grad_mean) @as(u8, 1) else @as(u8, 0));
 
-            var s_w_new = try readTensorData(allocator, r);
+            var s_w_new = try readTensorData(allocator, r, dim, dim);
             errdefer s_w_new.deinit();
-            var t_w_new = try readTensorData(allocator, r);
+            var t_w_new = try readTensorData(allocator, r, dim, dim);
             errdefer t_w_new.deinit();
-            var s_b_new = try readTensorData(allocator, r);
+            var s_b_new = try readTensorData(allocator, r, 1, dim);
             errdefer s_b_new.deinit();
-            var t_b_new = try readTensorData(allocator, r);
+            var t_b_new = try readTensorData(allocator, r, 1, dim);
             errdefer t_b_new.deinit();
 
             try validateTensor2DShape(&s_w_new, dim, dim);
@@ -1659,7 +1676,8 @@ pub const RSF = struct {
             initialized += 1;
         }
 
-        if (try r.readInt(u32, .little) != hasher.final()) return error.ChecksumMismatch;
+        const stored_crc = try r.readInt(u32, .little);
+        if (stored_crc != hasher.final()) return error.ChecksumMismatch;
 
         var eof_buf: [1]u8 = undefined;
         if ((try r.read(&eof_buf)) != 0) return error.TrailingData;
@@ -1702,10 +1720,10 @@ pub const RSF = struct {
 
         var i: usize = 0;
         while (i < layer_count1) : (i += 1) {
-            if (!try tensorAllCloseEq(&core1.layers[i].s_weight, &core2.layers[i].s_weight, abs_tol, rel_tol)) return false;
-            if (!try tensorAllCloseEq(&core1.layers[i].t_weight, &core2.layers[i].t_weight, abs_tol, rel_tol)) return false;
-            if (!try tensorAllCloseEq(&core1.layers[i].s_bias, &core2.layers[i].s_bias, abs_tol, rel_tol)) return false;
-            if (!try tensorAllCloseEq(&core1.layers[i].t_bias, &core2.layers[i].t_bias, abs_tol, rel_tol)) return false;
+            if (!(try tensorAllCloseEq(&core1.layers[i].s_weight, &core2.layers[i].s_weight, abs_tol, rel_tol))) return false;
+            if (!(try tensorAllCloseEq(&core1.layers[i].t_weight, &core2.layers[i].t_weight, abs_tol, rel_tol))) return false;
+            if (!(try tensorAllCloseEq(&core1.layers[i].s_bias, &core2.layers[i].s_bias, abs_tol, rel_tol))) return false;
+            if (!(try tensorAllCloseEq(&core1.layers[i].t_bias, &core2.layers[i].t_bias, abs_tol, rel_tol))) return false;
             if (core1.layers[i].clip_min != core2.layers[i].clip_min or core1.layers[i].clip_max != core2.layers[i].clip_max or core1.layers[i].grad_mean != core2.layers[i].grad_mean) return false;
         }
 
@@ -1795,15 +1813,21 @@ fn readEncodedBool(r: anytype) !bool {
     };
 }
 
-fn readTensorData(allocator: Allocator, r: anytype) !Tensor {
+fn readTensorData(allocator: Allocator, r: anytype, expected_rows: usize, expected_cols: usize) !Tensor {
     if ((try r.readInt(u64, .little)) != 2) return error.BadFileFormat;
-    const d0 = try checkedCastU64ToUsize(try r.readInt(u64, .little));
-    const d1 = try checkedCastU64ToUsize(try r.readInt(u64, .little));
-    var t = try Tensor.init(allocator, &.{ d0, d1 });
+    const d0_u64 = try r.readInt(u64, .little);
+    const d1_u64 = try r.readInt(u64, .little);
+    const expected_rows_u64: u64 = @intCast(expected_rows);
+    const expected_cols_u64: u64 = @intCast(expected_cols);
+    if (d0_u64 != expected_rows_u64 or d1_u64 != expected_cols_u64) return error.ShapeMismatch;
+    const expected = try checkedMul(expected_rows, expected_cols);
+    var t = try Tensor.init(allocator, &.{ expected_rows, expected_cols });
     errdefer t.deinit();
-    const expected = try checkedMul(d0, d1);
     var i: usize = 0;
-    while (i < expected) : (i += 1) t.data[i] = @bitCast(try r.readInt(u32, .little));
+    while (i < expected) : (i += 1) {
+        const bits = try r.readInt(u32, .little);
+        t.data[i] = @as(f32, @bitCast(bits));
+    }
     return t;
 }
 
@@ -1816,8 +1840,10 @@ fn hexEncodeLower(dst: []u8, src: []const u8) []u8 {
     const alphabet = "0123456789abcdef";
     var i: usize = 0;
     while (i < src.len) : (i += 1) {
-        dst[i * 2] = alphabet[(src[i] >> 4) & 0x0f];
-        dst[i * 2 + 1] = alphabet[src[i] & 0x0f];
+        const hi: usize = @intCast((src[i] >> 4) & 0x0f);
+        const lo: usize = @intCast(src[i] & 0x0f);
+        dst[i * 2] = alphabet[hi];
+        dst[i * 2 + 1] = alphabet[lo];
     }
     return dst[0 .. src.len * 2];
 }
@@ -1846,16 +1872,18 @@ fn createUniqueTempFile(dir: *std.fs.Dir, allocator: Allocator, base_name: []con
 fn writeSnapshotVersion4ToPath(snapshot: *const SavedModelSnapshot, path: []const u8, allocator: Allocator) !void {
     if (snapshot.num_layers != snapshot.layers.len) return error.InvalidModelState;
     try validateModelConfigValues(snapshot.dim, snapshot.num_layers, snapshot.cfg);
+    if (path.len == 0) return error.InvalidPath;
 
     const parent_path = if (std.fs.path.dirname(path)) |p| p else ".";
     const base_name = std.fs.path.basename(path);
+    if (base_name.len == 0) return error.InvalidPath;
     var parent_dir = if (std.fs.path.isAbsolute(parent_path)) try std.fs.openDirAbsolute(parent_path, .{}) else try std.fs.cwd().openDir(parent_path, .{});
     defer parent_dir.close();
 
     const temp = try createUniqueTempFile(&parent_dir, allocator, base_name);
     defer allocator.free(temp.tmp_name);
 
-    var file = temp.file;
+    const file = temp.file;
     var file_open = true;
     var tmp_exists = true;
     errdefer {
@@ -1924,11 +1952,8 @@ fn writeSnapshotVersion4ToPath(snapshot: *const SavedModelSnapshot, path: []cons
     tmp_exists = false;
 }
 
-
 test "RSF forward then inverse returns input within 1e-4 tolerance" {
     const allocator = std.testing.allocator;
-    var prng = std.Random.DefaultPrng.init(42);
-    _ = prng.random();
 
     var rsf = try RSFLayer.init(allocator, 32);
     defer rsf.deinit();
@@ -1958,51 +1983,24 @@ test "RSF forward then inverse returns input within 1e-4 tolerance" {
 
 test "RSF with OFTB forward then inverse returns input within 1e-4 tolerance" {
     const allocator = std.testing.allocator;
-    var prng = std.Random.DefaultPrng.init(123);
-    const random = prng.random();
 
     const dim: usize = 16;
     const num_layers: usize = 4;
 
-    var layers = std.ArrayList(RSFLayer).init(allocator);
-    defer {
-        for (layers.items) |*l| l.deinit();
-        layers.deinit();
-    }
-    var li: usize = 0;
-    while (li < num_layers) : (li += 1) {
-        const layer = try RSFLayer.init(allocator, dim);
-        try layers.append(layer);
-    }
+    var rsf = try RSF.init(allocator, dim, num_layers);
+    defer rsf.deinit();
 
-    var input = try Tensor.init(allocator, &[_]usize{ 2, dim * 2 });
+    var input = try Tensor.randomUniform(allocator, &[_]usize{ 2, dim * 2 }, -0.5, 0.5, 123);
     defer input.deinit();
-    for (input.data) |*v| {
-        v.* = (random.float(f32) - 0.5);
-    }
 
-    const original = try allocator.dupe(f32, input.data);
-    defer allocator.free(original);
+    var original = try tensorClone(allocator, &input);
+    defer original.deinit();
 
-    for (layers.items) |*layer| {
-        var x1 = Tensor{ .data = input.data[0 .. dim], .shape = input.shape };
-        var x2 = Tensor{ .data = input.data[dim .. dim * 2], .shape = input.shape };
-        try layer.forward(&x1, &x2);
-        var oftb = OFTB.init(dim);
-        try oftb.forwardInPlace(&input);
-    }
-
-    var rev_idx: usize = num_layers;
-    while (rev_idx > 0) : (rev_idx -= 1) {
-        var oftb = OFTB.init(dim);
-        try oftb.backwardInPlace(input.data);
-        var y1 = Tensor{ .data = input.data[0 .. dim], .shape = input.shape };
-        var y2 = Tensor{ .data = input.data[dim .. dim * 2], .shape = input.shape };
-        try layers.items[rev_idx - 1].inverse(&y1, &y2);
-    }
+    try rsf.forwardCPU(&input);
+    try rsf.inverse(&input);
 
     var idx: usize = 0;
     while (idx < input.data.len) : (idx += 1) {
-        try std.testing.expectApproxEqAbs(input.data[idx], original[idx], 1e-4);
+        try std.testing.expectApproxEqAbs(input.data[idx], original.data[idx], 1e-4);
     }
 }
