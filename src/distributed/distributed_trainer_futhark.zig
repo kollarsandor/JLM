@@ -13,6 +13,7 @@ const futhark = @import("../hw/accel/futhark_bindings.zig");
 const core_relational = @import("../core_relational/mod.zig");
 const CREVPipeline = core_relational.CREVPipeline;
 const ChaosCoreKernel = core_relational.ChaosCoreKernel;
+const sfd = @import("../optimizer/sfd.zig");
 
 pub const TrainerConfig = struct {
     learning_rate: f32 = 0.001,
@@ -84,10 +85,9 @@ pub const DistributedTrainerFuthark = struct {
             "when",  "which",   "who",   "will",  "with",  "would", "year",
             "you",   "your",
         };
-        if (model_dim < vocab.len) return error.ModelDimTooSmallForVocabulary;
         const empty_anchors: []const []const u8 = &.{};
 
-        var tokenizer = try MGT.init(allocator, vocab, empty_anchors);
+        var tokenizer = try MGT.init(allocator, vocab, empty_anchors, 50000, .english);
         errdefer tokenizer.deinit();
 
         std.debug.print("tokenizer.next_token_id = {d}\n", .{tokenizer.next_token_id});
@@ -146,6 +146,17 @@ pub const DistributedTrainerFuthark = struct {
         if (self.embedding) |*emb| emb.deinit();
         self.accelerator.deinit();
         self.tokenizer.deinit();
+    }
+
+    pub fn reinitEmbedding(self: *DistributedTrainerFuthark) !void {
+        if (self.embedding) |*emb| emb.deinit();
+        self.embedding = try LearnedEmbedding.init(
+            self.allocator,
+            self.tokenizer.next_token_id,
+            self.model_dim,
+            42,
+        );
+        self.vocab_size = self.tokenizer.next_token_id;
     }
 
     fn validateHyperparameters(learning_rate: f32, momentum: f32) !void {
@@ -934,6 +945,10 @@ pub const DistributedTrainerFuthark = struct {
             try std.fs.cwd().rename(tmp_path, path);
         }
 
+        const tok_path = try std.fmt.allocPrint(self.allocator, "{s}.tokenizer", .{path});
+        defer self.allocator.free(tok_path);
+        try self.tokenizer.saveVocab(tok_path);
+
         std.debug.print("Checkpoint saved to {s} at step {d}\n", .{ path, self.global_step });
     }
 
@@ -967,7 +982,7 @@ pub const DistributedTrainerFuthark = struct {
 
         if (saved_model_dim != self.model_dim) return error.ModelDimMismatch;
         if (saved_num_layers != self.num_layers) return error.NumLayersMismatch;
-        if (saved_vocab_size != self.vocab_size) return error.VocabSizeMismatch;
+        _ = saved_vocab_size;
         _ = saved_local_batch_size;
 
         try validateHyperparameters(saved_learning_rate, saved_momentum);
@@ -1067,6 +1082,12 @@ pub const DistributedTrainerFuthark = struct {
         try self.accelerator.setClipRange(@floatCast(clip_min_f32), @floatCast(clip_max_f32));
 
         try self.accelerator.sync();
+
+        const tok_path = try std.fmt.allocPrint(self.allocator, "{s}.tokenizer", .{path});
+        defer self.allocator.free(tok_path);
+        try self.tokenizer.loadVocab(tok_path);
+        self.vocab_size = self.tokenizer.next_token_id;
+        try self.reinitEmbedding();
 
         std.debug.print("Checkpoint loaded from {s} at step {d}\n", .{ path, self.global_step });
     }
@@ -1233,8 +1254,17 @@ pub const DistributedTrainerFuthark = struct {
                         }
                     }
                 }
+
+                var gfc = sfd.GradientFlowController.init(self.allocator, grad_data.len, 1.0, 0.1) catch {
+                    emb.backward(list, grad_data, max_seq_len);
+                    emb.applyGradients(self.learning_rate, self.momentum);
+                    continue;
+                };
+                defer gfc.deinit();
+                gfc.clipAndNormalize(grad_data) catch {};
+
                 emb.backward(list, grad_data, max_seq_len);
-                emb.applyGradients(self.learning_rate, 0.9);
+                emb.applyGradients(self.learning_rate, self.momentum);
             }
         }
     }
