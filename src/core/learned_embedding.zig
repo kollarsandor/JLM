@@ -42,18 +42,19 @@ pub const LearnedEmbedding = struct {
     }
 
     pub fn forward(self: *LearnedEmbedding, allocator: Allocator, tokens: []const u32, max_seq_len: usize) !Tensor {
-        _ = max_seq_len;
-        if (tokens.len == 0) return error.EmptyTokens;
-        var out = try Tensor.init(allocator, &.{ 1, self.dim });
+        const seq_len = @min(tokens.len, if (max_seq_len > 0) max_seq_len else tokens.len);
+        if (seq_len == 0) return error.EmptyTokens;
+        var out = try Tensor.init(allocator, &.{ seq_len, self.dim });
         @memset(out.data, 0.0);
         var r: usize = 0;
-        while (r < tokens.len) : (r += 1) {
+        while (r < seq_len) : (r += 1) {
             const t = @min(@as(usize, tokens[r]), self.vocab_size - 1);
             var c: usize = 0;
             while (c < self.dim) : (c += 1) {
                 const w_idx = t * self.dim + c;
-                if (w_idx < self.weight.data.len) {
-                    out.data[c] += self.weight.data[w_idx];
+                const out_idx = r * self.dim + c;
+                if (w_idx < self.weight.data.len and out_idx < out.data.len) {
+                    out.data[out_idx] = self.weight.data[w_idx];
                 }
             }
         }
@@ -61,16 +62,17 @@ pub const LearnedEmbedding = struct {
     }
 
     pub fn backward(self: *LearnedEmbedding, tokens: []const u32, out_grad: []const f32, max_seq_len: usize) void {
-        _ = max_seq_len;
-        if (tokens.len == 0) return;
+        const seq_len = @min(tokens.len, if (max_seq_len > 0) max_seq_len else tokens.len);
+        if (seq_len == 0) return;
         var r: usize = 0;
-        while (r < tokens.len) : (r += 1) {
+        while (r < seq_len) : (r += 1) {
             const t = @min(@as(usize, tokens[r]), self.vocab_size - 1);
             var c: usize = 0;
             while (c < self.dim) : (c += 1) {
                 const g_idx = t * self.dim + c;
-                if (g_idx < self.grad.data.len and c < out_grad.len) {
-                    self.grad.data[g_idx] += out_grad[c];
+                const grad_idx = r * self.dim + c;
+                if (g_idx < self.grad.data.len and grad_idx < out_grad.len) {
+                    self.grad.data[g_idx] += out_grad[grad_idx];
                 }
             }
         }
@@ -172,7 +174,7 @@ test "LearnedEmbedding weights update with non-zero gradient" {
     var out = try emb.forward(allocator, &tokens, 8);
     defer out.deinit();
 
-    const grad_len = emb.dim;
+    const grad_len = emb.dim * tokens.len;
     const grad_data = try allocator.alloc(f32, grad_len);
     defer allocator.free(grad_data);
     var gi: usize = 0;
