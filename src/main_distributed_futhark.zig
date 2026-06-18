@@ -111,9 +111,6 @@ pub fn main() !void {
     var num_layers_str_owned: ?[]u8 = null;
     const num_layers_str: []const u8 = blk: {
         num_layers_str_owned = std.process.getEnvVarOwned(allocator, "JAIDE_LAYERS") catch null;
-        // 24 matches the baseline Modal config (model_dim=2048,layers=24 ≈ 50M params).
-        // The Modal orchestrator always sets JAIDE_LAYERS explicitly so this
-        // default only matters for local invocations.
         break :blk num_layers_str_owned orelse "24";
     };
     defer if (num_layers_str_owned) |owned| allocator.free(owned);
@@ -178,6 +175,10 @@ pub fn main() !void {
         allocator.free(samples);
     }
 
+    try trainer.tokenizer.trainBPE(samples, 32000);
+    std.debug.print("[Rank {d}] BPE training done, vocab_size={d}\n", .{ rank, trainer.tokenizer.next_token_id });
+    try trainer.reinitEmbedding();
+
     if (coordinator.isRoot()) {
         std.debug.print("\n============================================================\n", .{});
         std.debug.print("Starting Futhark-accelerated training\n", .{});
@@ -217,11 +218,6 @@ pub fn main() !void {
             {
                 var dir_buf: [256]u8 = undefined;
                 const dir_path = std.fmt.bufPrint(&dir_buf, "/checkpoints/epoch_{d:0>3}", .{epoch + 1}) catch "/checkpoints";
-                // Ensure both /checkpoints (parent volume mount) and the
-                // per-epoch subdirectory exist. makeDirAbsolute only creates
-                // the leaf and silently fails (ENOENT) if the parent isn't
-                // there. By making both we tolerate either fresh boots or
-                // Modal mounts where the parent is pre-created.
                 std.fs.makeDirAbsolute("/checkpoints") catch |e| switch (e) {
                     error.PathAlreadyExists => {},
                     else => std.debug.print("[Rank 0] makeDirAbsolute(/checkpoints) failed: {} (continuing)\n", .{e}),
@@ -253,4 +249,3 @@ pub fn main() !void {
         std.debug.print("============================================================\n", .{});
     }
 }
-
