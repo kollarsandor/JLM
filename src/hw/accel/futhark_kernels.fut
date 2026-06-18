@@ -94,10 +94,8 @@ let rsf_scatter [n] (x: [n]f32) (indices: [n]i64): [n]f32 =
       else x[i]
     )
 
-let rsf_flow [half] (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32): [half*2]f32 =
+let rsf_flow [half] (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (clip_min: f32) (clip_max: f32): [half*2]f32 =
   let d = half * 2
-  let clip_min = -5.0f32
-  let clip_max = 5.0f32
   let x1 = x[0:half] :> [half]f32
   let x2 = x[half:d] :> [half]f32
   let scale = tabulate half (\j ->
@@ -112,13 +110,13 @@ let rsf_flow [half] (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [hal
   let y2 = map2 (+) x2 trans
   in (y1 ++ y2) :> [half*2]f32
 
-let rsf_forward_layer [half] (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (perm_indices: [half*2]i64): [half*2]f32 =
+let rsf_forward_layer [half] (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (perm_indices: [half*2]i64) (clip_min: f32) (clip_max: f32): [half*2]f32 =
   let scattered = rsf_scatter x perm_indices
-  in rsf_flow scattered s_weight t_weight s_bias t_bias
+  in rsf_flow scattered s_weight t_weight s_bias t_bias clip_min clip_max
 
-let rsf_forward_multi [num_layers][half] (x: [half*2]f32) (s_ws: [num_layers][half][half]f32) (t_ws: [num_layers][half][half]f32) (s_bs: [num_layers][half]f32) (t_bs: [num_layers][half]f32) (perms: [num_layers][half*2]i64): [half*2]f32 =
+let rsf_forward_multi [num_layers][half] (x: [half*2]f32) (s_ws: [num_layers][half][half]f32) (t_ws: [num_layers][half][half]f32) (s_bs: [num_layers][half]f32) (t_bs: [num_layers][half]f32) (perms: [num_layers][half*2]i64) (clip_min: f32) (clip_max: f32): [half*2]f32 =
   loop acc = x for i < num_layers do
-    rsf_forward_layer acc s_ws[i] t_ws[i] s_bs[i] t_bs[i] perms[i]
+    rsf_forward_layer acc s_ws[i] t_ws[i] s_bs[i] t_bs[i] perms[i] clip_min clip_max
 
 let rsf_backward_scatter [n] (grad: [n]f32) (indices: [n]i64): [n]f32 =
   if n < 2 then copy grad
@@ -140,10 +138,8 @@ let rsf_backward_scatter [n] (grad: [n]f32) (indices: [n]i64): [n]f32 =
       if i < half * 2 then base[i] else grad[i]
     )
 
-let rsf_backward_flow [half] (grad_out: [half*2]f32) (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) =
+let rsf_backward_flow [half] (grad_out: [half*2]f32) (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (clip_min: f32) (clip_max: f32): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) =
   let d = half * 2
-  let clip_min = -5.0f32
-  let clip_max = 5.0f32
   let x1 = x[0:half] :> [half]f32
   let x2 = x[half:d] :> [half]f32
   let pre_scale = tabulate half (\j ->
@@ -178,9 +174,9 @@ let rsf_backward_flow [half] (grad_out: [half*2]f32) (x: [half*2]f32) (s_weight:
   let grad_tb = copy dy2
   in (grad_x, grad_ws, grad_wt, grad_sb, grad_tb)
 
-let rsf_backward_layer [half] (grad_out: [half*2]f32) (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (perm_indices: [half*2]i64): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) =
+let rsf_backward_layer [half] (grad_out: [half*2]f32) (x: [half*2]f32) (s_weight: [half][half]f32) (t_weight: [half][half]f32) (s_bias: [half]f32) (t_bias: [half]f32) (perm_indices: [half*2]i64) (clip_min: f32) (clip_max: f32): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) =
   let scattered_x = rsf_scatter x perm_indices
-  let (grad_flow, grad_s_w, grad_t_w, grad_s_b, grad_t_b) = rsf_backward_flow grad_out scattered_x s_weight t_weight s_bias t_bias
+  let (grad_flow, grad_s_w, grad_t_w, grad_s_b, grad_t_b) = rsf_backward_flow grad_out scattered_x s_weight t_weight s_bias t_bias clip_min clip_max
   let grad_x = rsf_backward_scatter grad_flow perm_indices
   in (grad_x, grad_s_w, grad_t_w, grad_s_b, grad_t_b)
 
@@ -317,9 +313,9 @@ entry select_topk [n] (k: i64) (scores: [n]f32): ([]f32, []i64) =
   let safe_k = i64.max 0 k
   in topk safe_k scores (iota n)
 
-entry rsf_forward [half] (x: [half*2]f32) (s_w: [half][half]f32) (t_w: [half][half]f32) (s_b: [half]f32) (t_b: [half]f32) (perm: [half*2]i64): [half*2]f32 = rsf_forward_layer x s_w t_w s_b t_b perm
-entry rsf_forward_multilayer [num_layers][half] (x: [half*2]f32) (s_ws: [num_layers][half][half]f32) (t_ws: [num_layers][half][half]f32) (s_bs: [num_layers][half]f32) (t_bs: [num_layers][half]f32) (perms: [num_layers][half*2]i64): [half*2]f32 = rsf_forward_multi x s_ws t_ws s_bs t_bs perms
-entry rsf_backward [half] (grad: [half*2]f32) (x: [half*2]f32) (s_w: [half][half]f32) (t_w: [half][half]f32) (s_b: [half]f32) (t_b: [half]f32) (perm: [half*2]i64): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) = rsf_backward_layer grad x s_w t_w s_b t_b perm
+entry rsf_forward [half] (x: [half*2]f32) (s_w: [half][half]f32) (t_w: [half][half]f32) (s_b: [half]f32) (t_b: [half]f32) (perm: [half*2]i64) (clip_min: f32) (clip_max: f32): [half*2]f32 = rsf_forward_layer x s_w t_w s_b t_b perm clip_min clip_max
+entry rsf_forward_multilayer [num_layers][half] (x: [half*2]f32) (s_ws: [num_layers][half][half]f32) (t_ws: [num_layers][half][half]f32) (s_bs: [num_layers][half]f32) (t_bs: [num_layers][half]f32) (perms: [num_layers][half*2]i64) (clip_min: f32) (clip_max: f32): [half*2]f32 = rsf_forward_multi x s_ws t_ws s_bs t_bs perms clip_min clip_max
+entry rsf_backward [half] (grad: [half*2]f32) (x: [half*2]f32) (s_w: [half][half]f32) (t_w: [half][half]f32) (s_b: [half]f32) (t_b: [half]f32) (perm: [half*2]i64) (clip_min: f32) (clip_max: f32): ([half*2]f32, [half][half]f32, [half][half]f32, [half]f32, [half]f32) = rsf_backward_layer grad x s_w t_w s_b t_b perm clip_min clip_max
 
 entry ssi_hash_tokens [m] (tokens: [m]u32): u64 = hash_sequence tokens
 entry ssi_find_nearest [n][m] (tree: [n]u64) (query: [m]u32): i64 = ssi_search tree query
@@ -880,5 +876,3 @@ entry rgpu_rel_or (re1: f32) (im1: f32) (re2: f32) (im2: f32): (f32, f32) =
 entry rgpu_rel_xor (re1: f32) (im1: f32) (re2: f32) (im2: f32): (f32, f32) =
   let result = rgpu_relational_xor {re=re1, im=im1} {re=re2, im=im2}
   in (result.re, result.im)
-
-================
