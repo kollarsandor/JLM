@@ -40,6 +40,9 @@ pub const ServerConfig = struct {
     require_api_key: bool = true,
     num_worker_threads: u32 = 4,
     keep_alive_timeout_ms: u64 = 5000,
+    esso_initial_temp: f64 = 100.0,
+    esso_cooling_rate: f64 = 0.95,
+    esso_max_iterations: usize = 10000,
 };
 
 const RateLimiter = struct {
@@ -435,7 +438,12 @@ pub const InferenceServer = struct {
 
         self.nsir_graph = try SelfSimilarRelationalGraph.init(self.allocator);
         self.chaos_kernel = ChaosCoreKernel.init(self.allocator);
-        self.esso = EntangledStochasticSymmetryOptimizer.init(self.allocator, 100.0, 0.95, 10000);
+        self.esso = EntangledStochasticSymmetryOptimizer.init(
+            self.allocator,
+            self.config.esso_initial_temp,
+            self.config.esso_cooling_rate,
+            self.config.esso_max_iterations,
+        );
         self.surprise_memory = SurpriseMemoryManager.init(self.allocator, &self.chaos_kernel.?.storage, &self.chaos_kernel.?.flow_analyzer);
         self.temporal_graph = TemporalGraph.init(self.allocator);
         self.signal_engine = SignalPropagationEngine.init(self.allocator, &self.nsir_graph.?, &self.chaos_kernel.?.flow_analyzer);
@@ -488,7 +496,7 @@ pub const InferenceServer = struct {
         std.debug.print("   - Max request size: {d} bytes\n", .{self.config.max_request_size_bytes});
         std.debug.print("   - Worker threads: {d}\n", .{self.config.num_worker_threads});
         std.debug.print("\n", .{});
-        std.debug.print("Inference server listening on {s}:{d}\n", .{self.config.host, self.config.port});
+        std.debug.print("Inference server listening on {s}:{d}\n", .{ self.config.host, self.config.port });
 
         while (self.running.load(.seq_cst)) {
             const connection = server.accept() catch |err| {
