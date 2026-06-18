@@ -66,7 +66,6 @@ pub const DistributedTrainerFuthark = struct {
         if (config.max_line_size == 0) return error.InvalidMaxLineSize;
         if (config.checkpoint_version == 0) return error.InvalidCheckpointVersion;
         try validateHyperparameters(config.learning_rate, config.momentum);
-        if (coordinator.world_size > 1 and config.momentum != 0.0) return error.UnsupportedDistributedMomentum;
 
         const vocab = &[_][]const u8{
             "a",     "about",   "all",   "also",  "and",   "as",    "at",
@@ -646,23 +645,17 @@ pub const DistributedTrainerFuthark = struct {
 
                 seq_idx = 0;
                 while (seq_idx < list.len) : (seq_idx += 1) {
-                    const token_index: usize = @intCast(list[seq_idx]);
-                    if (token_index >= self.model_dim) {
-                        std.debug.print("[Rank {d}] token id {d} >= model_dim {d}; aborting step\n", .{ self.coordinator.rank, token_index, self.model_dim });
-                        return error.TokenIndexOutOfRange;
-                    }
+                    if (seq_idx + 1 >= list.len) continue;
+                    const next_token: usize = @min(@as(usize, list[seq_idx + 1]), emb.vocab_size - 1);
                     const row_offset = try std.math.mul(usize, b_idx, max_seq_len);
                     const row_index = try std.math.add(usize, row_offset, seq_idx);
                     const base_idx = try std.math.mul(usize, row_index, self.model_dim);
-                    if (seq_idx + 1 < list.len) {
-                        const next_token: usize = @intCast(list[seq_idx + 1]);
-                        if (next_token >= self.model_dim) {
-                            std.debug.print("[Rank {d}] next-token id {d} >= model_dim {d}; aborting step\n", .{ self.coordinator.rank, next_token, self.model_dim });
-                            return error.TokenIndexOutOfRange;
+                    var c: usize = 0;
+                    while (c < self.model_dim) : (c += 1) {
+                        const w_idx = next_token * self.model_dim + c;
+                        if (w_idx < emb.weight.data.len and base_idx + c < target_f16_data.len) {
+                            target_f16_data[base_idx + c] = @floatCast(emb.weight.data[w_idx]);
                         }
-                        const tgt_final = try std.math.add(usize, base_idx, next_token);
-                        if (tgt_final >= target_f16_data.len) return error.IndexOutOfBounds;
-                        target_f16_data[tgt_final] = @as(f16, 1.0);
                     }
                 }
             }
@@ -986,9 +979,6 @@ pub const DistributedTrainerFuthark = struct {
         _ = saved_local_batch_size;
 
         try validateHyperparameters(saved_learning_rate, saved_momentum);
-        if (self.coordinator.world_size > 1 and saved_momentum != 0.0) {
-            return error.UnsupportedDistributedMomentum;
-        }
         self.learning_rate = saved_learning_rate;
         self.momentum = saved_momentum;
         self.global_step = saved_global_step;
@@ -1223,7 +1213,7 @@ pub const DistributedTrainerFuthark = struct {
         }
 
         if (grad) |gi| {
-            const total = effective_batch_size * max_seq_len * self.model_dim;
+            const total = try std.math.mul(usize, try std.math.mul(usize, effective_batch_size, max_seq_len), self.model_dim);
             var host_f16 = std.heap.page_allocator.alloc(f16, total) catch {
                 _ = futhark.futhark_free_f16_3d(fctx, gi);
                 return;
@@ -1239,7 +1229,7 @@ pub const DistributedTrainerFuthark = struct {
                 const list = token_items[b_idx].items;
                 if (list.len == 0) continue;
                 const seq_len = @min(list.len, max_seq_len);
-                const grad_len = seq_len * self.model_dim;
+                const grad_len = try std.math.mul(usize, seq_len, self.model_dim);
                 var grad_data = self.allocator.alloc(f32, grad_len) catch continue;
                 defer self.allocator.free(grad_data);
 
@@ -1273,7 +1263,7 @@ pub const DistributedTrainerFuthark = struct {
         if (self.embedding_accel != null) return;
         self.embedding_accel = try EmbeddingAccelerator.init(
             &self.accelerator.ctx,
-            50000,
+            self.vocab_size,
             self.model_dim,
             42,
         );
