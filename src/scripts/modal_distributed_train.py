@@ -260,7 +260,7 @@ def train_all_ranks(
     epochs: int = 5,
     model_dim: int = 2048,
     num_layers: int = 24,
-    local_batch_size: int = 4,
+    local_batch_size: int = 2,
     world_size: int = 8,
 ) -> Dict[str, Any]:
     import threading
@@ -324,8 +324,8 @@ def train_all_ranks(
     base_env["JAIDE_BATCH_SIZE"] = str(local_batch_size)
     base_env["JAIDE_NCCL_ID_PATH"] = str(nccl_id_path)
     base_env["JAIDE_TOTAL_SAMPLES"] = str(sample_count)
-    base_env["JAIDE_MAX_SAMPLES"] = str(min(sample_count, 8000))
-    base_env["JAIDE_MAX_SEQ_LEN"] = "256"
+    base_env["JAIDE_MAX_SAMPLES"] = str(sample_count)
+    base_env["JAIDE_MAX_SEQ_LEN"] = "2048"
     base_env["JAIDE_LEARNING_RATE"] = "0.0001"
     base_env["NCCL_DEBUG"] = "WARN"
     base_env["NCCL_IB_DISABLE"] = "1"
@@ -447,7 +447,7 @@ def main(
     epochs: int = 5,
     model_dim: int = 2048,
     num_layers: int = 24,
-    local_batch_size: int = 4,
+    local_batch_size: int = 2,
     world_size: int = 8,
 ) -> None:
     result = train_all_ranks.remote(
@@ -458,5 +458,3 @@ def main(
         world_size=world_size,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
-
-================
